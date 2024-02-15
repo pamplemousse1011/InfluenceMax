@@ -219,7 +219,6 @@ class StoModel(pl.LightningModule):
         dropout_rate:float=0,
         use_pretrained_featemb:bool=False,
         disable_base_x_embedding_training:bool=False,
-        save_logpath:str=None,
         **kwargs
     ):
         super().__init__()   
@@ -285,28 +284,6 @@ class StoModel(pl.LightningModule):
         Layers.append(nn.Linear(in_features=n_hidden[-1], out_features=1))
         return nn.Sequential(*Layers).to(dtype) 
     
-    # def create_net(self, dropout_rate: float, dtype: torch.dtype, n_in:int, *n_hidden):
-    #     Layers = []
-    #     Layers.append(nn.Linear(in_features=n_in, out_features=n_hidden[0]))
-    #     # Layers.append(StandardizeNorm1d(n_hidden[0], affine=True))
-    #     Layers.append(nn.SiLU())
-    #     # Layers.append(nn.Dropout(p=dropout_rate))
-    #     if self.use_residual:
-    #         Layers.append(ResidualBlock(in_features=n_hidden[0], p=dropout_rate))
-    #         # Layers.append(nn.Dropout(p=dropout_rate))
-    #     for i in range(1, len(n_hidden)):    
-    #         Layers.append(nn.Linear(in_features=n_hidden[i-1], out_features=n_hidden[i])) 
-    #         Layers.append(nn.SiLU())
-    #         # Layers.append(nn.Dropout(p=dropout_rate))
-    #         if self.use_residual:
-    #             Layers.append(ResidualBlock(in_features=n_hidden[i], p=dropout_rate))
-    #             # Layers.append(nn.Dropout(p=dropout_rate))
-    #         # Layers.append(StandardizeNorm1d(n_hidden[i], affine=True)) 
-    #     Layers.append(nn.Dropout(p=dropout_rate))
-    #     Layers.append(nn.Linear(in_features=n_hidden[-1], out_features=1))
-    #     return nn.Sequential(*Layers).to(dtype) 
-
-    
     def forward(self, base_x: Tensor, x:Tensor) -> Tensor: 
         """
         INPUT:
@@ -345,7 +322,7 @@ class StoModel(pl.LightningModule):
         out = torch.stack([net(emb) for net in self.nets], dim = 0)
         return out # (n_model, b, out_dim=1) 
          
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch:Tuple[Tensor, ...], batch_idx):
         base_x, x, y = batch
 
         if self.n_noise > 0:
@@ -383,10 +360,8 @@ class StoModel(pl.LightningModule):
         self.test_batchsize_list = []
         return
     
-    def test_step(self, batch, batch_idx):
-
+    def test_step(self, batch:Tuple[Tensor, ...], batch_idx):
         base_x, x, y = batch
-
         if self.n_noise > 0:
             ## Model prediction
             y_hat_1 = self(base_x, x)             # (n_model, b, out_dim=1) 
@@ -400,8 +375,7 @@ class StoModel(pl.LightningModule):
                 multichannel=True, 
                 reduction='sum'                   # (n_model, )   
             )            
-             
-                
+
         else:
             ## Model prediction
             y_hat = self(base_x, x).squeeze(-1)   # (n_model, b) 

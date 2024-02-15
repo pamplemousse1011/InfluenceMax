@@ -1,11 +1,8 @@
 import torch 
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from torch import Tensor
-# from functorch import vmap
-import numpy as np
 
-import pytorch_lightning as pl
-from typing import Optional, Dict
+import lightning.pytorch as pl
 
 from codes.influence_max.utils import zero_mean_unit_var_normalization
 

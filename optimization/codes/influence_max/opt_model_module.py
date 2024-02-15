@@ -28,43 +28,43 @@ from codes.utils import zero_mean_unit_var_denormalization
 
 from codes.influence_max.utils import value_and_jacfwd 
 
-def get_zon_params(search_domain:jnp.ndarray, n_rad:Optional[int]=None) -> Tuple[jnp.ndarray, jnp.ndarray]: 
-    """
-    For x in range [a, b], we standardize x by 
-    (x - a) / (b - a)
-    """
-    mu    = search_domain[:,0]
-    gamma = search_domain[:,1] - search_domain[:,0]  
-    return mu, gamma
+# def get_zon_params(search_domain:jnp.ndarray, n_rad:Optional[int]=None) -> Tuple[jnp.ndarray, jnp.ndarray]: 
+#     """
+#     For x in range [a, b], we standardize x by 
+#     (x - a) / (b - a)
+#     """
+#     mu    = search_domain[:,0]
+#     gamma = search_domain[:,1] - search_domain[:,0]  
+#     return mu, gamma
 
-def get_rbf_params(search_domain:jnp.ndarray, n_rad:int=3) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """
-    We use product sum formulation (not the union sum formulation). 
-    This leads to n_rad**d centers in total (n_rad*d for union sum).
+# def get_rbf_params(search_domain:jnp.ndarray, n_rad:int=3) -> Tuple[jnp.ndarray, jnp.ndarray]:
+#     """
+#     We use product sum formulation (not the union sum formulation). 
+#     This leads to n_rad**d centers in total (n_rad*d for union sum).
     
-    Arguments:
-    ===================
-    n_rad: number of centers in each dimension
+#     Arguments:
+#     ===================
+#     n_rad: number of centers in each dimension
 
-    Returns:
-    ===================
-    mu: (n_rad, d) 
-    gamma: (d, )
-    """ 
+#     Returns:
+#     ===================
+#     mu: (n_rad, d) 
+#     gamma: (d, )
+#     """ 
      
-    gamma = jnp.stack(
-        [(n_rad/(xmax - xmin))**2 for (xmin, xmax) in search_domain], 
-        axis=0
-    )
-    mu = jnp.stack(
-        [jnp.linspace(start=xmin+(xmax-xmin)/(10*n_rad), 
-                    stop=xmax-(xmax-xmin)/(10*n_rad), 
-                    num=n_rad,
-                    endpoint=True
-        ) for (xmin, xmax) in search_domain], 
-        axis=-1
-    )
-    return mu, gamma
+#     gamma = jnp.stack(
+#         [(n_rad/(xmax - xmin))**2 for (xmin, xmax) in search_domain], 
+#         axis=0
+#     )
+#     mu = jnp.stack(
+#         [jnp.linspace(start=xmin+(xmax-xmin)/(10*n_rad), 
+#                     stop=xmax-(xmax-xmin)/(10*n_rad), 
+#                     num=n_rad,
+#                     endpoint=True
+#         ) for (xmin, xmax) in search_domain], 
+#         axis=-1
+#     )
+#     return mu, gamma
 
 def map_rbf_func(x:jnp.ndarray, mu:jnp.ndarray, gamma:jnp.ndarray) -> jnp.ndarray:
     """ 
