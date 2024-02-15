@@ -12,9 +12,9 @@ import functools
 import blackhc.laaos as laaos 
 from blackhc.laaos import create_file_store
 
-from utils import print_x, print_progress, ignore_criterion
-from context_stopwatch import ContextStopwatch
-import data_modules.data_generator as OptGenData 
+from codes.utils import print_x, print_progress, ignore_criterion
+from codes.context_stopwatch import ContextStopwatch
+import codes.data_modules.data_generator as OptGenData 
 from codes.influence_max.noisy_funct_optimization.influence_max import InfluenceMax  
 from codes.influence_max.noisy_funct_optimization.opt_train_pl import train_pl_model
 
@@ -571,9 +571,12 @@ def main():
 
         with ContextStopwatch() as train_model_stopwatch:  
             (model_fn, model_params, xmins, new_x_nn, ensmodel_fn, train_metrics) = train_pl_model( 
-                search_domain=gendata.search_domain,
-                train_features=samples_x,
-                train_labels=samples_y, 
+                search_domain        = gendata.search_domain,
+                train_features       = samples_x,
+                train_labels         = samples_y, 
+                do_normalize_y       = args.get('do_normalize_output', True),
+                output_ensemble_xmin = True,
+                noiseed              = it,
                 **args
             )
             
@@ -625,10 +628,13 @@ def main():
 
             # retrain the model 
             with ContextStopwatch() as retrain_fxmin_stopwatch:
-                (model_fn, model_params, xmins, ensmodel_fn, train_metrics) = train_pl_model( 
-                    search_domain  = gendata.search_domain,
-                    train_features = samples_x,
-                    train_labels   = samples_y,
+                (model_fn, model_params, xmins, _, ensmodel_fn, train_metrics) = train_pl_model( 
+                    search_domain        = gendata.search_domain,
+                    train_features       = samples_x,
+                    train_labels         = samples_y,
+                    do_normalize_y       = args.get('do_normalize_output', True),
+                    output_ensemble_xmin = False,
+                    noiseed              = it,
                     **args
                 )
 

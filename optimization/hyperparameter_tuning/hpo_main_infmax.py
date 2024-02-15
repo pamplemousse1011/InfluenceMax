@@ -782,7 +782,7 @@ def main():
                     base_x_embedding_dim=base_x_embedding_dim,
                     train_y_savedir=gendata.log_dir,
                     do_normalize_y=args['do_normalize_output'],
-                    output_ensemble_xmin=True,
+                    output_ensemble_xmin=False,
                     noiseed=it,
                     **args
                 )

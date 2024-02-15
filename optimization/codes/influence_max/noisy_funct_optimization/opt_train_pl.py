@@ -13,7 +13,7 @@ from codes.influence_max.noisy_funct_optimization.opt_data_module import OptData
 # from codes.influence_max.opt_model_module import LitModel 
 from codes.utils import gc_cuda, print_x
 
-from jax import random, jit, clear_caches, numpy as jnp
+from jax import jit, clear_caches, numpy as jnp
 from jax.tree_util import Partial, tree_map
 from flax.core.frozen_dict import FrozenDict
 
@@ -177,7 +177,7 @@ def train_pl_model(
         print("xmin(M{:d})=({:s})".format(ii, print_x(xmins[ii]))) 
 
 
-    xmin_star = None
+    xmin_star = np.empty_like(xmins[0])
     if output_ensemble_xmin:
         t0 = time.time()
         """
@@ -204,6 +204,6 @@ def train_pl_model(
     clear_caches()
     
 
-    return (model, variables, xmins, ensmodel_fn, jnp.array(list(train_metrics.values()))) 
+    return (model, variables, xmins, xmin_star, ensmodel_fn, jnp.array(list(train_metrics.values()))) 
             
  

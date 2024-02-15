@@ -272,7 +272,7 @@ def train_pl_model(
     for ii in range(kwargs.get('n_candidate_model', 5)):
         print("xmin(M{:d})=({:s})".format(ii, print_x(xmins[ii])))
 
-    xmin_star = None
+    xmin_star = np.empty_like(xmins[0])
     if output_ensemble_xmin:
         t0 = time.time()
         """
