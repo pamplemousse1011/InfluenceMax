@@ -7,7 +7,7 @@ import numpy as np
 import pytorch_lightning as pl
 from typing import Optional, Dict
 
-from opt_utils import zero_mean_unit_var_normalization
+from codes.influence_max.utils import zero_mean_unit_var_normalization
 
 class ZipDataset(Dataset):
     def __init__(self, *datasets):
@@ -23,6 +23,7 @@ class OptDataModule(pl.LightningDataModule):
     def __init__(self, 
         train_x:Tensor,
         train_y:Tensor,  
+        do_normalize_y:bool=True,
         n_candidate_model:int=1,  
         n_ensemble_model:int=1,  
         leave_one_out:bool=True, 
@@ -30,16 +31,27 @@ class OptDataModule(pl.LightningDataModule):
         **kwargs
     ):
         super().__init__() 
+        ## Normalization statistics 
+        train_y_normalized, self.ymean, self.ystd = self.get_y_stats(
+            train_y, do_normalize_y)
+
+
         self.leave_one_out  = leave_one_out 
         self.batch_size     = batch_size 
         self.kwargs         = kwargs
         
-        data_train      = TensorDataset(train_x, train_y)
+        data_train      = TensorDataset(train_x, train_y_normalized)
         indicator_jn    = self.generate_indicator_jn(n_candidate_model, n_ensemble_model, data_train)
         self.data_train = ZipDataset(indicator_jn, data_train) 
         self.data_test  = data_train
         self.n_train    = len(self.data_train) 
-
+    
+    def get_y_stats(self, y:Tensor, do_normalize_y:bool=False):
+        if do_normalize_y: 
+            return zero_mean_unit_var_normalization(y)
+        else:
+            return y, torch.zeros_like(y.mean(0)), torch.ones_like(y.std(0))
+        
     def generate_indicator_jn(self, n_candidate_model:int, n_ensemble_model:int, data:TensorDataset):
         n_train = len(data) 
         indicator_jn = torch.full((n_train, n_candidate_model+n_ensemble_model), True) 
@@ -75,18 +87,18 @@ class OptDataModule(pl.LightningDataModule):
         ) 
         return loader_data 
 
-    # def val_dataloader(self):
-    #     loader_val = DataLoader(
-    #         self.data_val, 
-    #         batch_size=self.batch_size, 
-    #         **self.kwargs
-    #     )
-    #     return loader_val
+    def val_dataloader(self):
+        loader_val = DataLoader(
+            self.data_test, 
+            batch_size=min(self.batch_size, self.n_train),
+            **self.kwargs
+        )
+        return loader_val
 
     def test_dataloader(self):
         loader_test = DataLoader(
             self.data_test, 
-            batch_size=self.batch_size, 
+            batch_size=min(self.batch_size, self.n_train),
             **self.kwargs
         )
         return loader_test

@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable, Tuple 
 
 import torch.optim as optim
 import torch.nn.functional as F
@@ -207,6 +207,7 @@ class StoModel(pl.LightningModule):
         no_batch_norm:bool=False,
         n_noise:int=100,
         noise_std:float=1.,
+        noise_n_resample:int=100,
         search_domain:Tensor=None,
         trans_method:str="none",
         trans_rbf_nrad:int=50,
@@ -244,12 +245,21 @@ class StoModel(pl.LightningModule):
         self.n_model   = n_model
         self.n_noise   = n_noise 
         self.noise_std = noise_std
+        self.noise_n_resample = noise_n_resample
 
         ## Denote other hyperparemeters used for training
         self.learning_rate = learning_rate 
         self.weight_decay  = weight_decay
         self.gamma         = gamma 
         self.milestones    = [1000]
+
+        self.save_logpath = save_logpath
+        self.train_step_numsamp = []
+        self.train_step_sumloss = []
+        self.train_epoch_outputs = []
+        self.val_step_numsamp = []
+        self.val_step_sumloss = []
+        self.val_epoch_outputs = []
     
     def create_net(
             self, 
@@ -271,25 +281,21 @@ class StoModel(pl.LightningModule):
         """
         INPUT:
         ###################
-        base_x : images of shape (..., C, H, W) or embedding of shape (..., d_base)
-        x      : hyperparameters of shape (..., d)  
+        x      : (..., d)  
         
         RETURN:
         ###################
         y_hat  : (..., outdim=1)
         """
-         
-        # Reshape (b, d)
-        x_re = x.reshape(-1, *x.shape[-1:]) 
-        
         # Get x embeddings: (b, d_emb)
-        emb = self.latent_embedding_fn(x_re)                       
+        emb = self.latent_embedding_fn(x)                       
         
         out = torch.stack([net(emb) for net in self.nets], dim = 0)
         return out # (n_model, b, out_dim=1) 
          
-    def training_step(self, batch, batch_idx):
-        x, y = batch
+    def training_step(self, batch:Tuple[Tensor, ...], batch_idx):
+        indicator_jn, x, y = batch
+        b = x.shape[0]
 
         if self.n_noise > 0:
             ## Model prediction
@@ -297,28 +303,70 @@ class StoModel(pl.LightningModule):
             y_hat_2 = self(x)             # (n_model, b, out_dim=1) 
             
             ## Compute loss 
-            loss = energy_loss_two_sample(
-                x_true=y.unsqueeze(-1),           # (n_model, b, out_dim=1)
-                x_perb_1=y_hat_1,                 # (n_model, b, out_dim=1)
-                x_perb_2=y_hat_2,                 # (n_model, b, out_dim=1)
-                multichannel=True, 
-                reduction="mean"
-            )                                     # (n_model, )  
+            loss = torch.stack([
+                energy_loss_two_sample(
+                    x_true   = y[indicator_jn[:,i]],            # (n_model, b, out_dim=1)
+                    x_perb_1 = y_hat_1[i][indicator_jn[:,i]],   # (n_model, b, out_dim=1)
+                    x_perb_2 = y_hat_2[i][indicator_jn[:,i]],   # (n_model, b, out_dim=1)
+                )
+                for i in range(self.n_model)
+            ])                                                  # (n_model, out_dim=1)
+        else:
+            ## Model prediction
+            y_hat = self(x).squeeze(-1)                         # (n_model, b) 
+            ## Compute loss 
+            loss = torch.stack([
+                F.mse_loss(
+                    input = y_hat[i][indicator_jn[:,i]], 
+                    target = y[indicator_jn[:,i]], 
+                )
+                for i in range(self.n_model)
+            ])                                                  # (n_model, )
+        loss = loss.mean()                                       
 
-            loss = loss.mean()                    # (,) 
+        ## Logging to TensorBoard by default
+        self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.save_logpath is not None:
+            self.train_step_sumloss.append(loss.detach()*b)
+            self.train_step_numsamp.append(b)
+        return {'loss':  loss}
+    
+    def validation_step(self, batch:Tuple[Tensor, ...], batch_idx):
+        x, y = batch
+        b = x.shape[0]
+        
+        if self.n_noise > 0:
+            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*b))).reshape(-1, x.shape[1:])
+            ## Model prediction
+            y_hat_rep = self(x_rep)         # (n_model, b*noise_n_resample, out_dim=1) 
+            y_hat = y_hat_rep.reshape(self.n_model, self.noise_n_resample, b).mean(1) # (n_model, b)
                 
         else:
             ## Model prediction
-            y_hat = self(x).squeeze(-1)                 # (n_model, b) 
-            ## Compute loss
-            loss = F.mse_loss(
-                input     = y_hat,                              # (n_model, b) 
-                target    = torch.tile(y, (self.n_model, 1)),   # (n_model, b) 
-                reduction = 'mean')                             # (,)
+            y_hat = self(x).squeeze(-1)   # (n_model, b) 
+        
+        ## Compute loss
+        loss = F.mse_loss(
+            input     = y_hat,                             # (n_model, b) 
+            target    = torch.tile(y, (self.n_model, 1)),  # (n_model, b) 
+            reduction = 'none')                            # (n_model, b)
             
-        ## Logging to TensorBoard by default
-        self.log('loss', loss)
-        return {'loss':  loss}
+        loss = loss.sum(-1)                                # (n_model,)
+
+        self.log('val_loss', loss.mean()/b, on_step=False, on_epoch=True, prog_bar=True)
+        if self.save_logpath is not None:
+            self.val_step_sumloss.append(loss)
+            self.val_step_numsamp.append(b)
+
+        return {'val_loss': loss.mean()}
+
+    def on_validation_epoch_end(self): 
+        if self.save_logpath is not None:
+            avg_loss = torch.stack(self.val_step_sumloss).sum(0) / sum(self.val_step_numsamp)
+            self.val_epoch_outputs.append((self.current_epoch, avg_loss.tolist()))
+            # free memory
+            self.val_step_sumloss.clear()  
+            self.val_step_numsamp.clear()  
     
     def on_test_epoch_start(self) -> None:
         super().on_test_epoch_start()
@@ -326,38 +374,30 @@ class StoModel(pl.LightningModule):
         self.test_batchsize_list = []
         return
     
-    def test_step(self, batch, batch_idx):
-
+    def test_step(self, batch:Tuple[Tensor, ...], batch_idx):
         x, y = batch
-
+        b = x.shape[0]
+        
         if self.n_noise > 0:
+            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*b))).reshape(-1, x.shape[1:])
             ## Model prediction
-            y_hat_1 = self(x)             # (n_model, b, out_dim=1) 
-            y_hat_2 = self(x)             # (n_model, b, out_dim=1) 
-            
-            ## Compute loss 
-            loss = energy_loss_two_sample(
-                x_true=y.unsqueeze(-1),           # (n_model, b, out_dim=1)
-                x_perb_1=y_hat_1,                 # (n_model, b, out_dim=1)
-                x_perb_2=y_hat_2,                 # (n_model, b, out_dim=1)
-                multichannel=True, 
-                reduction='sum'                   # (n_model, )   
-            )            
-             
+            y_hat_rep = self(x_rep)         # (n_model, b*noise_n_resample, out_dim=1) 
+            y_hat = y_hat_rep.reshape(self.n_model, self.noise_n_resample, b).mean(1) # (n_model, b)
                 
         else:
             ## Model prediction
             y_hat = self(x).squeeze(-1)   # (n_model, b) 
-            ## Compute loss
-            loss = F.mse_loss(
-                input     = y_hat,                             # (n_model, b) 
-                target    = torch.tile(y, (self.n_model, 1)),  # (n_model, b) 
-                reduction = 'none')                            # (n_model, b)
-              
-            loss = loss.sum(-1)                   # (n_model, )
+        
+        ## Compute loss
+        loss = F.mse_loss(
+            input     = y_hat,                             # (n_model, b) 
+            target    = torch.tile(y, (self.n_model, 1)),  # (n_model, b) 
+            reduction = 'none')                            # (n_model, b)
             
+        loss = loss.sum(-1)                                # (n_model, )
+        
         self.test_output_list.append(loss)
-        self.test_batchsize_list.append(batch[0].shape[0])
+        self.test_batchsize_list.append(b)
     
     def on_test_epoch_end(self):
         n_train  = sum(self.test_batchsize_list) 
@@ -462,56 +502,53 @@ class RntModel(pl.LightningModule):
     
     def create_net(
             self, 
-            dtype: torch.dtype, 
+            dtype:torch.dtype, 
             n_in:int, 
             *n_hidden
         ):
         Layers = []
         Layers.append(RntBlock(in_dim=n_in, out_dim=n_hidden[0]))        
-        for i in range(1, len(n_hidden)):    
-            # Layers.append(nn.Dropout(0.5))
+        for i in range(1, len(n_hidden)):     
             Layers.append(RntBlock(in_dim=n_hidden[i-1], out_dim=n_hidden[i])) 
-        # Layers.append(nn.Dropout(0.7))
         Layers.append(nn.Linear(in_features=n_hidden[-1], out_features=1))
         return nn.Sequential(*Layers).to(dtype) 
     
-    def forward(self, base_x: Tensor, x:Tensor) -> Tensor: 
+    def forward(self, x:Tensor) -> Tensor: 
         """
         INPUT:
         ###################
-        base_x : images of shape (..., C, H, W) or embedding of shape (..., d_base)
-        x      : hyperparameters of shape (..., d)  
+        x : (..., d)  
         
         RETURN:
         ###################
-        y_hat  : (..., outdim=1)
+        y_hat : (..., outdim=1)
         """
-        
-        # Reshape (b, d)
-        x_re = x.reshape(-1, *x.shape[-1:]) 
-        
         # Get x embeddings: (b, d_2)
-        emb = self.latent_embedding_fn(x_re)                       
+        emb = self.latent_embedding_fn(x)                       
  
         out = torch.stack([net(emb) for net in self.nets], dim = 0)
-        return out # (n_model, b, out_dim=1) 
+        return out # (n_model, ..., out_dim=1) 
          
-    def training_step(self, batch:Tuple[Tensor, Tensor, Tensor], batch_idx:int):
-        x, y = batch
-
+    def training_step(self, batch:Tuple[Tensor,Tuple[Tensor, ...]], batch_idx:int):
+        indicator_jn, (x, y) = batch
+        b = x.shape
         ## Model prediction
         y_hat = self(x).squeeze(-1)                 # (n_model, b) 
         ## Compute loss
-        loss = F.mse_loss(
-            input     = y_hat,                              # (n_model, b) 
-            target    = torch.tile(y, (self.n_model, 1)),   # (n_model, b) 
-            reduction = 'mean')                             # (,)
+        loss = torch.stack([
+            F.mse_loss(
+                input = y_hat[i][indicator_jn[:,i]], 
+                target = y[indicator_jn[:,i]],
+            )
+            for i in range(self.n_model)
+        ]) # (n_model, )
+        loss = loss.mean()
         
         ## Logging to TensorBoard by default
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         if self.save_logpath is not None:
-            self.train_step_sumloss.append(loss.detach()*x.shape[0])
-            self.train_step_numsamp.append(x.shape[0])
+            self.train_step_sumloss.append(loss.detach()*b)
+            self.train_step_numsamp.append(b)
         return {'loss':  loss}
     
     def on_train_epoch_end(self): 
@@ -541,7 +578,7 @@ class RntModel(pl.LightningModule):
                     f.write(f"{epoch}, {val_loss}\n")
 
 
-    def validation_step(self, batch:Tuple[Tensor, Tensor, Tensor], batch_idx):
+    def validation_step(self, batch:Tuple[Tensor, ...], batch_idx):
         x, y = batch
         ## Model prediction
         y_hat = self(x).squeeze(-1)   # (n_model, b) 
@@ -551,7 +588,7 @@ class RntModel(pl.LightningModule):
             target    = torch.tile(y, (self.n_model, 1)),  # (n_model, b) 
             reduction = 'none')                            # (n_model, b)
             
-        loss = loss.sum(-1)                   # (n_model, )
+        loss = loss.sum(-1)                                # (n_model, )
         
         self.log('val_loss', loss.mean()/x.shape[0], on_step=False, on_epoch=True, prog_bar=True)
         if self.save_logpath is not None:
@@ -574,7 +611,7 @@ class RntModel(pl.LightningModule):
         self.test_batchsize_list = []
         return
     
-    def test_step(self, batch:Tuple[Tensor, Tensor, Tensor], batch_idx):
+    def test_step(self, batch:Tuple[Tensor, ...], batch_idx):
         x, y = batch
         ## Model prediction
         y_hat = self(x).squeeze(-1)   # (n_model, b) 
@@ -587,7 +624,7 @@ class RntModel(pl.LightningModule):
         loss = loss.sum(-1)                   # (n_model, )
         
         self.test_output_list.append(loss)
-        self.test_batchsize_list.append(batch[0].shape[0])
+        self.test_batchsize_list.append(x.shape[0])
     
     def on_test_epoch_end(self):
         n_train  = sum(self.test_batchsize_list) 
@@ -597,7 +634,7 @@ class RntModel(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(
-            self.parameters(), 
+            self.nets.parameters(), 
             lr=self.learning_rate, 
             weight_decay=self.weight_decay
         )

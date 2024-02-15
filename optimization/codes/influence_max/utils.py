@@ -1,9 +1,11 @@
 # https://github.com/google/jax/blob/a131828194a1a69195adb970f35903a2208eb2f1/jax/api.py#L651
 from typing import (Callable, Union, Sequence)
 from tqdm.auto import tqdm
-
-import numpy as np
 from functools import partial
+
+import torch
+from torch import Tensor
+import numpy as np
 
 from jax import random, linear_util as lu 
 from jax._src.api_util import argnums_partial  
@@ -20,33 +22,61 @@ from jax._src.api import (
     _jvp
 )
 
-
-def zero_one_normalization(X:Union[np.ndarray, jnp.ndarray], lower=None, upper=None):
+def zero_one_normalization(X:Union[np.ndarray, jnp.ndarray, Tensor], lower=None, upper=None):
     if isinstance(X, np.ndarray):
         if lower is None:
             lower = np.min(X, axis=0)
         if upper is None:
             upper = np.max(X, axis=0)
-
         X_normalized = np.true_divide((X - lower), (upper - lower))
-    else:
+
+    elif isinstance(X, jnp.ndarray):
         if lower is None:
             lower = jnp.min(X, axis=0)
         if upper is None:
             upper = jnp.max(X, axis=0)
-
         X_normalized = jnp.true_divide((X - lower), (upper - lower))
 
+    elif isinstance(X, Tensor):
+        if lower is None:
+            lower = jnp.min(X, axis=0)
+        if upper is None:
+            upper = jnp.max(X, axis=0)
+        X_normalized = torch.true_divide((X - lower), (upper - lower))
+
+    else:
+        raise ValueError("Unrecognized array. Can only be 'Tensor', 'numpy.ndarray' or 'jax.numpy.ndarray'.")
+        
     return X_normalized, lower, upper
 
-def zero_mean_unit_var_normalization(X:Union[np.ndarray, jnp.ndarray], mean=None, std=None):
-    if mean is None:
-        mean = np.mean(X, axis=0)
-    if std is None:
-        std = np.std(X, axis=0)
+def zero_mean_unit_var_normalization(X:Union[np.ndarray, jnp.ndarray, Tensor], mean=None, std=None):
+    if isinstance(X, np.ndarray):
+        if mean is None:
+            mean = np.mean(X, axis=0)
+        if std is None:
+            std = np.std(X, axis=0)
 
-    X_normalized = (X - mean) / std
+        X_normalized = np.true_divide(X - mean, std)
 
+    elif isinstance(X, jnp.ndarray):
+        if mean is None:
+            mean = jnp.mean(X, axis=0)
+        if std is None:
+            std = jnp.std(X, axis=0)
+
+        X_normalized = jnp.true_divide(X - mean, std)
+
+    elif isinstance(X, Tensor):
+        if mean is None:
+            mean = torch.mean(X, dim=0)
+        if std is None:
+            std = torch.std(X, dim=0)
+
+        X_normalized = torch.true_divide(X - mean, std)
+
+    else:
+        raise ValueError("Unrecognized array. Can only be 'Tensor', 'numpy.ndarray' or 'jax.numpy.ndarray'.")
+    
     return X_normalized, mean, std
 
 def batch_min(fn, x:jnp.ndarray, batch_size:int=8192, disp:bool=False, description="Influence"):

@@ -60,6 +60,7 @@ def train_pl_model(
         no_batch_norm=kwargs.get('no_batch_norm', False), 
         n_noise=kwargs.get('sto_n_noise', 0),
         noise_std=kwargs.get('sto_noise_std', 1.),
+        noise_n_resample=kwargs.get('sto_n_resample', 100),
         search_domain=search_domain,
         trans_method=kwargs.get('trans_method', 'rbf'), 
         trans_rbf_nrad=kwargs.get('trans_rbf_nrad', 5), 
