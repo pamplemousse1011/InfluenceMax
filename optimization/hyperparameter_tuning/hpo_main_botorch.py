@@ -98,7 +98,7 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--path_laaos_prefix",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
+        default='./data-out/',
         # default='/home/',
         help="path of the prefix for laaos",
     )
@@ -106,14 +106,14 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--path_logs",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
+        default='./logs/',
         help="path of the lightning logs",
     )
     
     parser.add_argument(
         "--path_data",
         type=str,
-        default='/scratch/wy635/data/',
+        default='./data/',
         help="path of the MNIST dataset",
     )
 

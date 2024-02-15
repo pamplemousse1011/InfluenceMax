@@ -1,4 +1,3 @@
-from __future__ import division 
 import time 
 from abc import ABC, abstractmethod
 from typing import List, Callable, Union
@@ -12,12 +11,12 @@ import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 
-from utils import generate_seed_according_to_time, gc_cuda
-from networks.pretrained_resnet import PretrainedFeatEmbModule
-from data_modules.image_model import *
-from data_modules.model_utils import *
-from data_modules.image_dataset import *
-from data_modules.data_utils import lowrank_perb 
+from codes.utils import generate_seed_according_to_time, gc_cuda
+from codes.networks.pretrained_resnet import PretrainedFeatEmbModule
+from codes.data_modules.image_model import *
+from codes.data_modules.model_utils import *
+from codes.data_modules.image_dataset import *
+from codes.data_modules.data_utils import lowrank_perb 
 
 MAXEPOCHS = {
     'cnn'     : 50,
@@ -576,7 +575,10 @@ class NoisyFunctionGenerator(OptimizationDataGenerator):
         # Noise variance
         self.sample_var  = sample_var
         self.noise_level = noise_level
-        
+
+        self.init_attributes()
+
+    def init_attributes(self):
         # Initialize search domain
         self.search_domain = None 
         # Optimum and optima
@@ -615,7 +617,7 @@ class NoisyFunctionGenerator(OptimizationDataGenerator):
                 rng=self.rng
             )
         else:
-            samples_x = self.rng.uniform(0, 1, size=(n_sample, self.active_dim)).astype(self.dtype)  
+            samples_x = self.rng.uniform(0, 1, size=(n_sample, self.active_dim)).astype(self.npdtype)  
             samples_x = samples_x*(self.search_domain[:,1]-self.search_domain[:,0])+self.search_domain[:,0]
         if evaluate:
             samples_y = self.evaluate(samples_x)
@@ -629,7 +631,7 @@ class NoisyFunctionGenerator(OptimizationDataGenerator):
 
     def evaluate(self, x:np.ndarray):  
         out = self.evaluate_true(x)
-        out += self.rng.normal(0, np.sqrt(self.sample_var), size=out.shape).astype(self.dtype)   
+        out += self.rng.normal(0, np.sqrt(self.sample_var), size=out.shape).astype(self.npdtype)   
         return out 
 
 class Branin(NoisyFunctionGenerator):
@@ -651,7 +653,7 @@ class Branin(NoisyFunctionGenerator):
         # Update search domain
         self._search_domain = np.repeat(
             [[0., 1.]], self.dim, axis=0
-        ).astype(self.dtype) 
+        ).astype(self.npdtype) 
 
         # Update optimum and optima
         self._f_opt = -1.0473938910927865
@@ -700,7 +702,7 @@ class Dropwave(NoisyFunctionGenerator):
         # Update search domain
         self.search_domain = np.repeat(
             [[-5.12, 5.12]], self.dim, axis=0
-        ).astype(self.dtype) 
+        ).astype(self.npdtype) 
         
         # Update optimum and optima
         self._f_opt = -1.
@@ -749,13 +751,13 @@ class GoldSteinPrice(NoisyFunctionGenerator):
         if self.scaled:  
             self.search_domain = np.repeat(
                 [[0., 1.]], self.dim, axis=0
-            ).astype(self.dtype) 
+            ).astype(self.npdtype) 
             self._f_opt = -3.129125550610585
             self._optima = [[0.50, 0.25]]  
         else:
             self.search_domain = np.repeat(
                 [[-2., 2.]], self.dim, axis=0
-            ).astype(self.dtype) 
+            ).astype(self.npdtype) 
             self._f_opt = 3.
             self._optima = [[0, -1.]] 
         
@@ -814,7 +816,7 @@ class Ackley(NoisyFunctionGenerator):
         # Update search domain
         self.search_domain = np.repeat(
             [[-5, 5]], self.dim, axis=0
-        ).astype(self.dtype) 
+        ).astype(self.npdtype) 
         
         # Update optimum and optima
         self._f_opt = 0.0
@@ -855,7 +857,7 @@ class Rastr(NoisyFunctionGenerator):
         # Update search_domain
         self._search_domain = np.repeat(
             [[-5.12, 5.12]], self.dim, axis=0
-        ).astype(self.dtype) 
+        ).astype(self.npdtype) 
 
         # Update optimum and optima
         self._f_opt = 0. 
@@ -900,8 +902,8 @@ class Hartmann6(NoisyFunctionGenerator):
         
         # Update search_domain
         self._search_domain = np.repeat(
-            [[0., 1.]], self._dim, axis=0
-        ).astype(self.dtype)
+            [[0., 1.]], self.dim, axis=0
+        ).astype(self.npdtype)
 
         # Update optimum and optima
         self._f_opt = -3.322368011391339
@@ -915,17 +917,17 @@ class Hartmann6(NoisyFunctionGenerator):
         Only the first _active_dim inputs matter 
         """
         alpha = np.array([1.00, 1.20, 3.00, 3.20],
-                         dtype=self.dtype)
+                         dtype=self.npdtype)
         A = np.array([[10.00,  3.00, 17.00,  3.50,  1.70,  8.00], 
                       [ 0.05, 10.00, 17.00,  0.10,  8.00, 14.00], 
                       [ 3.00,  3.50,  1.70, 10.00, 17.00,  8.00],
                       [17.00,  8.00,  0.05, 10.00,  0.10, 14.00]],
-                      dtype=self.dtype)
+                      dtype=self.npdtype)
         P = 1.0e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886], 
                                [2329, 4135, 8307, 3736, 1004, 9991],
                                [2348, 1451, 3522, 2883, 3047, 6650], 
                                [4047, 8828, 8732, 5743, 1091, 381]],
-                               dtype=self.dtype)
+                               dtype=self.npdtype)
         results = 0.0
         for i in range(4):
             inner_value = 0.0

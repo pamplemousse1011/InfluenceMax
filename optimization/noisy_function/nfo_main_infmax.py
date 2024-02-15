@@ -131,7 +131,7 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--path_laaos_prefix",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
+        default='./data-out/',
         # default='/home/',
         help="path of the prefix for laaos",
     )
@@ -139,7 +139,7 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--path_logs",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
+        default='./logs/',
         help="path of the lightning logs",
     ) 
 
@@ -231,7 +231,7 @@ def create_experiment_config_argparser(parser):
         "--n_hidden",
         type=int,
         nargs='+',
-        default=[512, 64, 64, 64],
+        default=[512, 64, 64],
         help="Number of hidden units in each layer of the neural networks",
     )
 
@@ -387,15 +387,8 @@ def create_experiment_config_argparser(parser):
         action="store_true", 
         default=False, 
         help="whether to normalize the output",
-    )
-
-    parser.add_argument(
-        "--acquire_fxmin_step",
-        type=int,
-        default=1, 
-        help="every # number of steps (>=1) to acquire fxmin; if -1 then not at all ", 
-    )
-
+    ) 
+    
     parser.add_argument(
         "--ignore_threshold",
         type=float,

@@ -120,15 +120,14 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--path_laaos_prefix",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
-        # default='/home/',
+        default='./data-out/', 
         help="path of the prefix for laaos",
     )
 
     parser.add_argument(
         "--path_logs",
         type=str,
-        default='/scratch/wy635/active_optimization/singularity/data-out/',
+        default='./logs/',
         help="path of the lightning logs",
     ) 
 
@@ -212,9 +211,6 @@ def main():
 
     if args.resume and os.path.isfile(resume_filename):
         resume_file = laaos.safe_load(resume_filename)
-        # if 'iterations' in resume_file and len(resume_file['iterations']) > 0:
-        #     print("DONE.")
-        #     return 
         print(f"Loading from {resume_filename}...")
         resume_args = resume_file['args']
         dtype = np.float64 if resume_args['use_double'] else np.float32
@@ -247,6 +243,7 @@ def main():
                     return
     
         resume_args['target_num_acquired_samples'] = args.target_num_acquired_samples
+        resume_args['path_laaos_prefix']           = args.path_laaos_prefix
         args = resume_args
     else:
         print(f"Creating new file {store_name}... ")
@@ -274,7 +271,7 @@ def main():
 
 
     ## Current status
-    opt_target  = gendata._f_opt
+    opt_target = gendata._f_opt
     idx_obsmin = np.argmin(samples_y)
     x_obsmin   = samples_x[idx_obsmin]
     tol_targt_obsmin   = gendata.evaluate_true(x_obsmin) - opt_target
@@ -314,16 +311,14 @@ def main():
                           torch.from_numpy(gendata.search_domain[:,1])]).to(device)
     n_dim = samples_x.shape[-1]
     
+    samples_x=samples_x.astype(dtype)
+    samples_y=samples_y.astype(dtype)
     tol = copy.deepcopy(tol_targt_obsmin)
     while (samples_x.shape[0] - args['n_initial_samples'] < args['target_num_acquired_samples']): 
         if tol <= args['target_tolerance']:
             print("Reached target tolerance {:.3f} with current tolerance {:.3f}".format(
                 args['target_tolerance'], tol))
             break
-
-        samples_x=samples_x.astype(dtype)
-        samples_y=samples_y.astype(dtype)
-        device=torch.device('cpu')
 
         ## Botorch selects new samples
         # botorch assumes maximization 

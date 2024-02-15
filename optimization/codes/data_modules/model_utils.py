@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from networks.wide_resnet import *
-from networks.preact_resnet import *
-from networks.cnn import * 
-from networks.resnet import *
-from networks.lenet import *
-from networks.vgg import *
+from codes.networks.wide_resnet import *
+from codes.networks.preact_resnet import *
+from codes.networks.cnn import * 
+from codes.networks.resnet import *
+from codes.networks.lenet import *
+from codes.networks.vgg import *
 
 IMGEMB_FACTORY = {
     "cnn": CNNEmbedding,

@@ -12,7 +12,7 @@ from torchvision import transforms
  
 import lightning.pytorch as pl
 
-from data_modules.data_utils import get_data_indices, compute_mean_std
+from codes.data_modules.data_utils import get_data_indices, compute_mean_std
 
 '''Train CIFAR10 with PyTorch.'''
 # https://shonit2096.medium.com/cnn-on-cifar10-data-set-using-pytorch-34be87e09844

@@ -7,7 +7,7 @@ from torch import Tensor
 
 import lightning.pytorch as pl
 
-from data_modules.model_utils import get_imagemodel_hyperparameters, get_imgemb_module
+from codes.data_modules.model_utils import get_imagemodel_hyperparameters, get_imgemb_module
  
 class ImageModelModule(pl.LightningModule):
     def __init__(

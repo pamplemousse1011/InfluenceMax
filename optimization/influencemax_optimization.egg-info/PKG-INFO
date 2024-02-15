@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: influencemax-optimization
+Version: 0.1
+Requires-Dist: torch
+Requires-Dist: tqdm
+Requires-Dist: lightning
+Requires-Dist: jax
+Requires-Dist: flax

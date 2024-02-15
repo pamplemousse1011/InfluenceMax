@@ -1,0 +1,17 @@
+setup.py
+codes/__init__.py
+codes/context_stopwatch.py
+codes/random_fixed_length_sampler.py
+codes/utils.py
+codes/influence_max/__init__.py
+codes/influence_max/compute_ihvp.py
+codes/influence_max/conjugate.py
+codes/influence_max/global_optimizer.py
+codes/influence_max/opt_model_module.py
+codes/influence_max/scipy_optimize_jax_wrapper.py
+codes/influence_max/utils.py
+influencemax_optimization.egg-info/PKG-INFO
+influencemax_optimization.egg-info/SOURCES.txt
+influencemax_optimization.egg-info/dependency_links.txt
+influencemax_optimization.egg-info/requires.txt
+influencemax_optimization.egg-info/top_level.txt

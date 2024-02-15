@@ -131,15 +131,6 @@ class InfluenceMax(object):
             *ravel_pytree(model_params['params']['targetizer']))
         return GEPoolGoal, GEPoolGoal_x # .transpose([1,0,2])  # (param_dim,), (nx, param_dim, x_dim)
     
-        # GEPoolGoal = grad(compute_loss_vectorize_single, argnums=5)(
-        #     x, 
-        #     y0hat,
-        #     self.model_fn, 
-        #     model_params['batch_stats'],
-        #     model_params['params']['featurizer'], 
-        #     *ravel_pytree(model_params['params']['targetizer']))
-        # return GEPoolGoal
-
     def compute_influence(
             self, 
             x:jnp.ndarray, 
@@ -182,8 +173,7 @@ class InfluenceMax(object):
                      'batch_stats': self.model_params['batch_stats']['_'.join(['MLP',str(j)])]}, 
                     train_x), 
                 list(range(self.kwargs['n_candidate_model']))))    # (n_candidate_model, nx) 
-
-            # print(train_yhat.shape)
+ 
             self.train_loss = jit(jnp.mean)((train_y - train_yhat)**2, axis=-1) # (n_candidate_model, ) 
         # compute weights for each candidate model
         return jit(jax.nn.softmax)(-self.train_loss/mss) # (n_candidate_nets,) 
@@ -253,13 +243,7 @@ class InfluenceMax(object):
         )
         t1 = time.time() - t0
         print("Step 3 takes {:.3f}s: Compute optima.".format(t1))
-
-        # if self.m_kmeansplusplus > 1:
-        #     idx_k = init_centers(Imin, x_Imin, self.acquire_k)
-        #     x_Imin = x_Imin[idx_k]
-        #     Imin = Imin[idx_k]
-
-        
+ 
         return AcquisitionBatch(
             x_Imin, 
             Imin
