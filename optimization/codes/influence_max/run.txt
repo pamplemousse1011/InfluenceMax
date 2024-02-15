@@ -1,0 +1,121 @@
+python -u /scratch/wy635/active_optimization/codes/opt_main.py --n_initial_samples 5 --target_num_acquired_samples 500 --high_dim 0 --low_dim 5 --dataset 'Branin' --sample_var 0.01 --max_epochs 1000 --leave_one_out --trans_method 'rbf' --trans_rbf_nrad 5 --use_fvp --fvp_size 5000 --lambda_fvp 0.01 --lastlayer
+python -u /scratch/wy635/active_optimization/codes/main_robo.py --n_initial_samples 5 --target_num_acquired_samples 500 --high_dim 0 --low_dim 5 --dataset 'Branin' --sample_var 0.01 --acquisition_model
+
+ 
+
+DATASET="Ackley"
+HIGHDIM=0
+LOWDIM=5
+MAXEPOCHS=2000
+TRANSMET="rbf"
+RBFNRAD=3
+PATHLOG="./logs/"
+PATHOUT="./output/"
+IHVPMET='cg'
+FVPSIZE=5000
+CHECKVAL=10000
+PATIENCE=20 
+NSAMPLE=5
+NTARGET=200 
+
+python -u ./codes/opt_main.py \
+--leave_one_out \
+--dataset $DATASET \
+--high_dim $HIGHDIM --low_dim $LOWDIM \
+--sample_var 0.01 \
+--lastlayer \
+--weight_decay 0.001 \
+--search_xmin_multi_start 200 \
+--n_initial_samples $NSAMPLE \
+--target_num_acquired_samples $NTARGET \
+--n_hidden 784 50 50 \
+--batch_size 64 --max_epochs $MAXEPOCHS \
+--check_val_every_n_epoch $CHECKVAL --early_stopping_patience $PATIENCE \
+--trans_method $TRANSMET --trans_rbf_nrad $RBFNRAD --trans_rbf_prodsum \
+--ihvp_method $IHVPMET --num_workers 1 \
+--path_laaos_prefix $PATHOUT --path_logs $PATHLOG \
+--early_stopping \
+--use_fvp --fvp_lambda 0.01 --fvp_size $FVPSIZE \
+--acquisition_method 'infmax'
+
+
+DATASET='Hartmann6'
+SVAR=0.0025
+NSAMPLE=15
+NTARGET=200
+HIGHDIM=0
+LOWDIM=6
+ID=1
+PATHOUT='./output/'
+PATHLOG='./logs/'
+
+python -u ./codes/main_turbo.py \
+--n_initial_samples $NSAMPLE \
+--target_num_acquired_samples $NTARGET \
+--high_dim $HIGHDIM --low_dim $LOWDIM \
+--dataset $DATASET --sample_var $SVAR \
+--trial $ID \
+--seed $ID \
+--path_laaos_prefix $PATHOUT \
+--path_logs $PATHLOG
+
+
+DATASET='Branin'
+SVAR=0.0025
+NSAMPLE=5
+NTARGET=150
+HIGHDIM=0
+LOWDIM=2
+PATHOUT='./output/'
+PATHLOG='./logs/'
+CHECKVAL=10000
+TRANSMET='rbf'
+RBFNRAD=3
+FVPSIZE=5000
+MAXEPOCHS=1000 
+BATCHSIZE=10
+NMSTART=100
+ID=1
+
+python -u ./codes/opt_main_obsxmin_v2.py \
+--leave_one_out \
+--dataset $DATASET \
+--high_dim $HIGHDIM --low_dim $LOWDIM \
+--sample_var $SVAR \
+--lastlayer \
+--weight_decay 0.001 \
+--search_xmin_multi_start $NMSTART \
+--n_initial_samples $NSAMPLE \
+--target_num_acquired_samples $NTARGET \
+--n_hidden 784 50 50 \
+--batch_size $BATCHSIZE --max_epochs $MAXEPOCHS \
+--check_val_every_n_epoch $CHECKVAL \
+--trans_method $TRANSMET --trans_rbf_nrad $RBFNRAD --trans_rbf_prodsum \
+--path_laaos_prefix $PATHOUT --path_logs $PATHLOG \
+--acquisition_method 'infmax' \
+--acquire_fxmin \
+--no_cuda \
+--num_workers 48 \
+--trial $ID --seed $ID
+
+
+PATHOUT="$PWD/data-out/other_methods/"
+PATHLOG="$PWD/logs/"
+DATASET="Ackley"
+NSAMPLE=5
+NTARGET=10
+NLEVEL=0.01
+SVAR=-1
+HIGHDIM=0
+LOWDIM=5
+
+python -u ../codes/main_cmoe.py \
+--n_hidden 784 50 50 --n_initial_samples $NSAMPLE \
+--target_num_acquired_samples $NTARGET \
+--high_dim $HIGHDIM --low_dim $LOWDIM \
+--dataset $DATASET --sample_var $SVAR \
+--noise_level $NLEVEL --acquisition_method 'KG' \
+--trial $SLURM_ARRAY_TASK_ID \
+--seed $SLURM_ARRAY_TASK_ID \
+--path_laaos_prefix $PATHOUT \
+--path_logs $PATHLOG
