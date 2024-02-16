@@ -24,8 +24,8 @@ from blackhc.laaos import create_file_store
 from codes.utils import print_x, print_progress, gc_cuda, ignore_criterion, perturb
 from codes.context_stopwatch import ContextStopwatch
 import codes.data_modules.data_generator as OptGenData 
-from codes.influence_max.hyperparam_optimization.influence_max import InfluenceMax  
-from codes.influence_max.hyperparam_optimization.opt_train_pl import train_pl_model
+from codes.influence_max.hyperparam_optimization.hpo_influence_max import InfluenceMax  
+from codes.influence_max.hyperparam_optimization.hpo_train_pl import train_pl_model
 
 def create_experiment_config_argparser(parser):
     parser.add_argument(

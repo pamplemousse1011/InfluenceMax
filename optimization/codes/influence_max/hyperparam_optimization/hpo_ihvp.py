@@ -6,7 +6,7 @@ from jax.tree_util import Partial
 from jax.flatten_util import ravel_pytree
 from jax.scipy.sparse.linalg import cg
  
-from influence_max.opt_model_module import compute_loss, compute_loss_vectorize, process_in_batches
+from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_loss, compute_loss_vectorize, process_in_batches
 from influence_max.conjugate import conjugate_gradient   
 from flax.core.frozen_dict import FrozenDict
 

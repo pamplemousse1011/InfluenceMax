@@ -3,7 +3,7 @@ from importlib import reload
 from jax import random 
 import jax.numpy as jnp
 
-from codes.influence_max.opt_model_module import StoJMLPBatch
+from codes.influence_max.hyperparam_optimization.hpo_model_module import StoJMLPBatch
 
 #####################################################################  
 model_check = StoJMLPBatch(
@@ -51,9 +51,9 @@ class SOMEMODEL(nn.Module):
         out = self.targetizer(out)
         return out
 
-import codes.influence_max.opt_model_module
-reload(codes.influence_max.opt_model_module)
-from codes.influence_max.opt_model_module import intermediate_grad_fn, mean_output
+import codes.influence_max.model_module
+reload(codes.influence_max.model_module)
+from codes.influence_max.model_module import intermediate_grad_fn, mean_output
 
  
                 

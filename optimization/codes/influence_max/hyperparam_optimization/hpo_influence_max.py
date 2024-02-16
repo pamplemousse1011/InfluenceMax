@@ -4,20 +4,18 @@ from jax import jvp, jit, jacfwd, jacrev, vmap, clear_caches
 import jax.numpy as jnp
 from jax.tree_util import Partial, tree_map
 from jax.flatten_util import ravel_pytree
-  
-from flax.core import freeze 
+   
 from flax.core.frozen_dict import FrozenDict
 
 import dataclasses 
 
 from typing import Sequence, Callable, List, Union
-import time 
-import math
-
-from codes.influence_max.compute_ihvp import inverse_hvp_fn
-from codes.influence_max.opt_model_module import compute_enspred, intermediate_grad_fn, process_in_batches
-from codes.influence_max.opt_model_module import compute_enspred_grad_on_x_SINGLE, compute_enspred_grad_on_x_BATCH
-from codes.influence_max.opt_model_module import compute_loss_grad_and_jac, compute_loss_grad_on_vars
+import time  
+from codes.influence_max.hyperparam_optimization.hpo_ihvp import inverse_hvp_fn
+from codes.influence_max.model_module import compute_enspred, intermediate_grad_fn
+from codes.influence_max.hyperparam_optimization.hpo_model_module import process_in_batches
+from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_enspred_grad_on_x_SINGLE 
+from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_loss_grad_and_jac, compute_loss_grad_on_vars
 from codes.influence_max.global_optimizer import global_optimization 
   
 @dataclasses.dataclass

@@ -105,10 +105,10 @@ def reject_outliers(x:np.ndarray, iq_range:float=0.7):
     return x[np.abs(x - median) <= iqr]
 
 def sum_helper(*x):
-    return jnp.row_stack(x).sum(0)
+    return jnp.vstack(x).sum(0)
 
 def row_stack_helper(*x):
-    return jnp.row_stack(x)
+    return jnp.vstack(x)
 
 def value_and_jacfwd(fun: Callable, argnums: Union[int, Sequence[int]] = 0,
                      has_aux: bool = False, holomorphic: bool = False):

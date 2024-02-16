@@ -2,20 +2,18 @@ import numpy as np
 import torch 
 from torch import Tensor
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import EarlyStopping, RichProgressBar
+from lightning.pytorch.callbacks import RichProgressBar
 from typing import Callable, Tuple 
 import time 
 
-from flax.core.frozen_dict import FrozenDict, freeze
+from flax.core.frozen_dict import freeze
 
 
-from codes.influence_max.noisy_funct_optimization.opt_data_module import OptDataModule 
-# from codes.influence_max.opt_model_module import LitModel 
+from codes.influence_max.noisy_funct_optimization.nfo_data_module import OptDataModule 
 from codes.utils import gc_cuda, print_x
 
 from jax import jit, clear_caches, numpy as jnp
 from jax.tree_util import Partial, tree_map
-from flax.core.frozen_dict import FrozenDict
 
 from codes.influence_max.global_optimizer import global_optimization
 
@@ -47,11 +45,11 @@ def train_pl_model(
     )
 
     if kwargs.get('use_stochastic', False): 
-        from influence_max.noisy_funct_optimization.opt_model_module_pytorch import StoModel as MModule 
-        from influence_max.opt_model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct, StoJMLP as JMLP, StoJENS as JENS
+        from influence_max.noisy_funct_optimization.nfo_model_module_pytorch import StoModel as MModule 
+        from codes.influence_max.model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct, StoJMLP as JMLP, StoJENS as JENS
     else:
-        from influence_max.noisy_funct_optimization.opt_model_module_pytorch import RntModel as MModule 
-        from influence_max.opt_model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct, RntJMLP as JMLP, RntJENS as JENS 
+        from influence_max.noisy_funct_optimization.nfo_model_module_pytorch import RntModel as MModule 
+        from codes.influence_max.model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct, RntJMLP as JMLP, RntJENS as JENS 
         
     pl.seed_everything(kwargs['trial'], workers=True)       
     infmax_model = MModule(

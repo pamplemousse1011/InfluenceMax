@@ -13,13 +13,12 @@ import dataclasses
 from typing import Sequence, Tuple, Callable, List, Union
 import time
 
-from opt_jax.opt_jax_model_module import jac_func, compute_loss_vectorize, compute_loss_vectorize_single
-from opt_jax.opt_jax_global_optimizer import global_optimization 
-from opt_utils import gc_cuda 
-from opt_jax.opt_jax_ihvp import inverse_hvp_fn
-from opt_jax.opt_jax_utils import value_and_jacfwd, sum_helper
-# from utils_influence_max import compute_loss, mu_func# , init_centers
-  
+from codes.influence_max.global_optimizer import global_optimization 
+from codes.influence_max.noisy_funct_optimization.nfo_model_module import jac_func, compute_loss_vectorize_single
+from codes.influence_max.noisy_funct_optimization.nfo_ihvp import inverse_hvp_fn
+from codes.influence_max.utils import value_and_jacfwd, sum_helper
+from codes.utils import gc_cuda 
+
 @dataclasses.dataclass
 class AcquisitionBatch:
     samples: Sequence[float] 
@@ -188,12 +187,14 @@ class InfluenceMax(object):
         ######### ===== COMPUTE GRADIENT OF EXPECTED GOAL====== ############
         t0 = time.time()
         GETaskGoals = tree_map(lambda j: self.compute_GETaskGoal(
-            model_params = freeze({'params'      : self.model_params['params']['_'.join(['MLP',str(j)])],
-                                   'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(j)])]
-                                }), 
+            model_params = freeze({
+                'params'      : self.model_params['params']['_'.join(['MLP',str(j)])],
+                'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(j)])]
+            }), 
             xmin         = self.xmins[j],  
             e            = self.kwargs['scaling_task']
         ), list(range(self.kwargs['n_candidate_model'])))
+        GETaskGoals = jnp.stack(GETaskGoals, axis=0)
         t1 = time.time() - t0
         print("Step 1 takes {:.3f}s: Compute the gradient of expected goal for the TEST data.".format(t1)) 
          
@@ -204,9 +205,10 @@ class InfluenceMax(object):
             inputs       = self.train_features,
             targets      = self.train_labels, 
             model_fn     = jit(self.model_fn),
-            model_params = freeze({'params'      : self.model_params['params']['_'.join(['MLP',str(j)])],
-                                   'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(j)])]
-                                }),  
+            model_params = freeze({
+                'params'      : self.model_params['params']['_'.join(['MLP',str(j)])],
+                'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(j)])]
+            }),  
             **self.kwargs
         ), list(range(self.kwargs['n_candidate_model'])))
         HinvGETasks = jnp.stack(HinvGETasks, axis=0)

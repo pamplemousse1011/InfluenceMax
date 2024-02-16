@@ -6,12 +6,13 @@ import torch
 
 #####################################################################  
 """Check RntJMLPSingle with rnt_parameter_reconstruct and RntModel yield the same results"""
-import codes.influence_max.hyperparam_optimization.opt_model_module_pytorch
-reload(codes.influence_max.hyperparam_optimization.opt_model_module_pytorch)
-from codes.influence_max.hyperparam_optimization.opt_model_module_pytorch import  RntModel
-import codes.influence_max.opt_model_module
-reload(codes.influence_max.opt_model_module)
-from codes.influence_max.opt_model_module import RntJMLPSingle, rnt_parameter_reconstruct, preprocess
+import codes.influence_max.model_module
+reload(codes.influence_max.model_module)
+from codes.influence_max.model_module import rnt_parameter_reconstruct, preprocess
+import codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch
+reload(codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch)
+from codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch import  RntModel
+from codes.influence_max.hyperparam_optimization.hpo_model_module import RntJMLPSingle
 import torch
 
 n_hidden = [100,50]

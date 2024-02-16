@@ -11,7 +11,7 @@ import numpy as np
 import lightning.pytorch as pl 
 from sklearn.model_selection import train_test_split
 
-from codes.influence_max.hyperparam_optimization.opt_data_utils import CustomConcat, MapDataset, collate_wrapper
+from codes.influence_max.hyperparam_optimization.hpo_data_utils import CustomConcat, MapDataset, collate_wrapper
 
 class OptDataModule(pl.LightningDataModule):
     def __init__(

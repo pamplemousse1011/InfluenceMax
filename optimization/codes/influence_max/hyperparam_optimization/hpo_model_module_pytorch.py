@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch import Tensor, vmap
 
 from collections import OrderedDict
+
 from codes.utils import vectorize
 
 class LatentEmbedding(object):

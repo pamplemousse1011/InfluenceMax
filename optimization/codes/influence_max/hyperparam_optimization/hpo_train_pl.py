@@ -9,16 +9,16 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import DataLoader 
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import EarlyStopping, RichProgressBar, StochasticWeightAveraging
+from lightning.pytorch.callbacks import RichProgressBar 
 
 import numpy as np
 from jax import jit, clear_caches, numpy as jnp
 from jax.tree_util import Partial, tree_map
-from flax.core.frozen_dict import FrozenDict, freeze
+from flax.core.frozen_dict import freeze
  
 from codes.utils import print_x, gc_cuda 
-from codes.influence_max.hyperparam_optimization.opt_data_module import OptDataModule
-from codes.influence_max.opt_model_module import compute_enspred
+from codes.influence_max.hyperparam_optimization.hpo_data_module import OptDataModule
+from codes.influence_max.model_module import compute_enspred
 from codes.influence_max.global_optimizer import global_optimization
 
 def train_pl_model( 
@@ -74,13 +74,14 @@ def train_pl_model(
     )
     
     if kwargs.get('use_stochastic', False):
-        from influence_max.hyperparam_optimization.opt_model_module_pytorch import StoModel as MModule 
-        from influence_max.opt_model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct, StoJMLPBatch as JMLPBatch, StoJMLPSingle as JMLPSingle
+        from influence_max.hyperparam_optimization.hpo_model_module_pytorch import StoModel as MModule 
+        from codes.influence_max.model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct
+        from codes.influence_max.hyperparam_optimization.hpo_model_module import StoJMLPBatch as JMLPBatch, StoJMLPSingle as JMLPSingle
 
     else:
-        from influence_max.hyperparam_optimization.opt_model_module_pytorch import RntModel as MModule 
-        from influence_max.opt_model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct, RntJMLPBatch as JMLPBatch, RntJMLPSingle as JMLPSingle
-
+        from influence_max.hyperparam_optimization.hpo_model_module_pytorch import RntModel as MModule 
+        from codes.influence_max.model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct
+        from codes.influence_max.hyperparam_optimization.hpo_model_module import RntJMLPBatch as JMLPBatch, RntJMLPSingle as JMLPSingle
         
     infmax_model = MModule(
         *kwargs['n_hidden'], 
