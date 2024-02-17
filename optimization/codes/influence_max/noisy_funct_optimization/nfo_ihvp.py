@@ -43,7 +43,7 @@ def get_inverse_hvp_cg_linalg(
     Here we solve:
         H^{-1}v = argmin_y y^T (HH + lambda*I)y - (Hv)^T y
     Compared to the classic formulation 
-        H^{-1}v = argmin_y y^T Hy - V^T y
+        H^{-1}v = argmin_y y^T Hy - v^T y
     - In practice the Hessian may have negative eigenvalues, since we run a SGD 
       and the final Hessian matrix H may not at a local minimum exactly.    
     - HH is guaranteed to be positive definite as long as H is invertible, 
@@ -275,6 +275,33 @@ def compute_H2x(
     # output = tree_map(lambda w1, w2: helper_Hx(w1, w2, lamda), xh2p, x)
     output = _regularizer(ravel_pytree(xh2p)[0], x, lamda)
     return output  
+
+def compute_Hx(
+    inputs     : jnp.ndarray,
+    targets    : jnp.ndarray,
+    model_fn   : Callable[[FrozenDict, jnp.ndarray], jnp.ndarray],
+    batch_stats: FrozenDict,
+    featurizer : FrozenDict,
+    targetizer : FrozenDict, 
+    x          : jnp.ndarray
+) -> jnp.ndarray:
+    """Compute Hx"""
+    
+    _, target_structure = ravel_pytree(targetizer)
+    x_pytree = target_structure(x)
+    ## Compute Hx
+    xhp = hvp(Partial(
+        compute_loss, 
+        inputs,
+        targets,  
+        model_fn, 
+        batch_stats,
+        featurizer), 
+        (targetizer,),
+        (x_pytree,)    
+    )
+
+    return ravel_pytree(xhp)[0]
 
 def compute_b(
     inputs     : jnp.ndarray,

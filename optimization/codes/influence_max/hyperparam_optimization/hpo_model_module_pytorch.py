@@ -625,7 +625,7 @@ class RntModel(pl.LightningModule):
             self.val_step_sumloss.append(loss)
             self.val_step_numsamp.append(x.shape[0])
 
-        return {'val_loss': loss.mean()}
+        return {'val_loss': loss.mean()/x.shape[0]}
 
     def on_validation_epoch_end(self): 
         if self.save_logpath is not None:

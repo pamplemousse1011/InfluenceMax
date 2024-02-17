@@ -1,5 +1,5 @@
 import torch  
-from jax import vmap, jit, grad, tree_map, random, lax
+from jax import vmap, random, grad 
 import jax.numpy as jnp 
 from jax.tree_util import Partial 
 from jax.flatten_util import ravel_pytree
@@ -89,40 +89,6 @@ def preprocess(mu, gamma, method='rbf') -> Callable[[jnp.ndarray], jnp.ndarray]:
     return Partial(func[method], mu=mu, gamma=gamma) 
 
 ##################################################################################### 
-
-def compute_ens_from_embedding(x:jnp.ndarray, MLPs:nn.Module, stochastic:bool, resample_size:int) -> jnp.ndarray:
-    """
-    x: embedding (d,)
-    
-    if stochastic:
-    - First sample new response data, x_rep, by creating identical copies, 
-        of shape (n_base * resample_size, n_dim). 
-    - Then pass the response data into model and obtain samples, where
-        samples[n_base*(i-1):n_sample*i,:] contains one sample for each data point, 
-        for i = 1, ..., resample_size
-    """
-    n_model = len(MLPs)
-
-    if stochastic > 0:
-        ## Sample new response data
-        emb_rep = jnp.tile(x, (resample_size, 1))                    # (resample_size, d)
-
-        ## Pass into model and average over n_model
-        output = jnp.stack(
-            [MLPs[str(ii)](emb_rep) 
-            for ii in range(n_model)],
-            axis = 0
-        ).mean(0)                                                    # (resample_size, out_dim=1)
-    
-    else: 
-        output = jnp.stack(
-            [MLPs[str(ii)](x) 
-            for ii in range(n_model)],
-            axis = 0
-        ).mean(0)                                                    # (1, out_dim=1) 
-        
-    ## Average the resamples
-    return output.mean(-2).squeeze(-1)                               # (,)
 
 class StoJBlock(nn.Module):
     feature       : int
@@ -377,26 +343,3 @@ def intermediate_grad_fn(
         *args,
         **kwargs
     )
-
-def compute_enspred(
-        model_fn:Callable[[FrozenDict,jnp.ndarray],jnp.ndarray], 
-        model_vars:FrozenDict,  
-        *args,
-        **kwargs 
-    ) -> jnp.ndarray:
-    # if 'MLP_0' in model_vars['params']:
-    output = jnp.vstack(
-        tree_map(
-            lambda j: model_fn(
-                freeze({
-                    'params'      : model_vars['params']['MLP_'+str(j)],
-                    'batch_stats' : model_vars['batch_stats']['MLP_'+str(j)]
-                }),
-                *args,
-                **kwargs
-            ), 
-            list(range(len(model_vars['params'])))
-        )      # (n_model,out_dim=1)
-    ).mean()  # (1,)
-    return output
-

@@ -18,7 +18,7 @@ from flax.core.frozen_dict import freeze
  
 from codes.utils import print_x, gc_cuda 
 from codes.influence_max.hyperparam_optimization.hpo_data_module import OptDataModule
-from codes.influence_max.model_module import compute_enspred
+from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_enspred
 from codes.influence_max.global_optimizer import global_optimization
 
 def train_pl_model( 
@@ -32,6 +32,7 @@ def train_pl_model(
     do_normalize_y:bool=False, 
     output_ensemble_xmin:bool=False,
     noiseed:int=101,
+    device:str="cpu",
     **kwargs
 ) -> Tuple[Tuple[jnp.ndarray, jnp.ndarray], Callable[[jnp.ndarray], jnp.ndarray], jnp.ndarray]:  
     """
@@ -74,12 +75,12 @@ def train_pl_model(
     )
     
     if kwargs.get('use_stochastic', False):
-        from influence_max.hyperparam_optimization.hpo_model_module_pytorch import StoModel as MModule 
+        from codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch import StoModel as MModule 
         from codes.influence_max.model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct
         from codes.influence_max.hyperparam_optimization.hpo_model_module import StoJMLPBatch as JMLPBatch, StoJMLPSingle as JMLPSingle
 
     else:
-        from influence_max.hyperparam_optimization.hpo_model_module_pytorch import RntModel as MModule 
+        from codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch import RntModel as MModule 
         from codes.influence_max.model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct
         from codes.influence_max.hyperparam_optimization.hpo_model_module import RntJMLPBatch as JMLPBatch, RntJMLPSingle as JMLPSingle
         
@@ -109,7 +110,7 @@ def train_pl_model(
     kwargs_trainer = {
         'max_epochs': kwargs.get('max_epochs', 10), 
         'min_epochs': kwargs.get('min_epochs', 1),
-        'accelerator': "gpu" if kwargs.get('use_cuda', False) else "cpu",
+        'accelerator': device,
         'enable_model_summary': False,
         'check_val_every_n_epoch': kwargs.get('check_val_every_n_epoch',50),
         'default_root_dir': kwargs['path_logs'],
@@ -120,7 +121,7 @@ def train_pl_model(
         'devices': kwargs.get('n_devices',1),
         'reload_dataloaders_every_n_epochs': 1
     } 
-    device = torch.device("cuda" if kwargs.get('use_cuda', False) else "cpu")
+    device = torch.device(device)
 
     callbacks = [RichProgressBar()] if kwargs['progress_bar'] else []  
     

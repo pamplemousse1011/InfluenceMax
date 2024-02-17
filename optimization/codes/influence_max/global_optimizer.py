@@ -236,17 +236,13 @@ def gridsearch_func(
     :param bounds: np.ndarray (d,2)
     """
     t0=time.time()
-    print("Grid-Search starting computation of initial points...")
     fvals=[]
     for xx in starts: 
         fval_curr = fun_to_opt(xx)
         fvals.append(fval_curr)
-    fvals= jnp.hstack(fvals) 
-    idx = lax.argmin(fvals, axis=0, index_dtype=int).reshape(-1)
-    t1=time.time() - t0
-    print("Grid-Search finished search of initial points ({:.2f}s). ".format(t1))
-    
-    t0=time.time()
+    fvals = jnp.hstack(fvals) 
+    idx   = lax.argmin(fvals, axis=0, index_dtype=int).reshape(-1)
+     
     ff = ScipyBoundedMinimize(
         method=method, 
         fun=fun_to_opt, 
@@ -260,6 +256,7 @@ def gridsearch_func(
         bounds=tuple([bounds[:,0], bounds[:,1]])
     )
     t1=time.time() - t0
+
     print("Grid-Search finished optimization ({:.2f}s). ".format(t1))
 
     return xmin, ymin

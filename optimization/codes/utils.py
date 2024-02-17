@@ -116,6 +116,7 @@ def ignore_criterion(samples_x, new_x=None, threshold:float=0.05, search_domain=
           else not similar to any one of the samples_x, should Not ignore.
     """
     if new_x is not None:
+        assert search_domain is not None, "search_domain is None!"
         scaled_threshold = threshold * (search_domain[:,1] - search_domain[:,0]) # (n_dim,)
         # Whether for all dimensions, each falls into the corresponding threshold
         res = np.all(np.abs(new_x - samples_x) < scaled_threshold, axis=-1) # (n_sample,)

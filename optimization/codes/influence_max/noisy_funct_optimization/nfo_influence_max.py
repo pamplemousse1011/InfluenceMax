@@ -1,6 +1,6 @@
 import numpy as np
 import jax
-from jax import vjp, grad, jit, jacfwd, jacrev, vmap
+from jax import jvp, grad, jit, jacfwd, jacrev, clear_caches, vmap
 import jax.numpy as jnp
 from jax.tree_util import Partial, tree_map
 from jax.flatten_util import ravel_pytree
@@ -14,10 +14,10 @@ from typing import Sequence, Tuple, Callable, List, Union
 import time
 
 from codes.influence_max.global_optimizer import global_optimization 
-from codes.influence_max.noisy_funct_optimization.nfo_model_module import jac_func, compute_loss_vectorize_single
+from codes.influence_max.model_module import intermediate_grad_fn
+from codes.influence_max.noisy_funct_optimization.nfo_model_module import compute_loss_vectorize_single, jac_func
 from codes.influence_max.noisy_funct_optimization.nfo_ihvp import inverse_hvp_fn
 from codes.influence_max.utils import value_and_jacfwd, sum_helper
-from codes.utils import gc_cuda 
 
 @dataclasses.dataclass
 class AcquisitionBatch:
@@ -93,74 +93,137 @@ class InfluenceMax(object):
         """
         Compute temp1 = [∂2𝜇(b,𝑥)/∂b∂𝑥] \dot temp2
         """ 
-        _, f_vjp = vjp(Partial(
-            jac_func,
+        temp1 = jvp(Partial(
+            intermediate_grad_fn,
             jit(self.model_fn),
-            xmin,    
-            model_params['batch_stats'],  
-            model_params['params']['featurizer']), 
-            model_params['params']['targetizer'])
+            model_params['batch_stats'], 
+            model_params['params']['featurizer'], 
+            model_params['params']['targetizer']), 
+            (xmin,), 
+            (temp2,)
+        )[1]
 
-        temp1  = jit(f_vjp)(temp2)[0]
+        # print("jvp", temp1)
+        # _, f_vjp = vjp(Partial(
+        #     jac_func,
+        #     jit(self.model_fn),
+        #     xmin,    
+        #     model_params['batch_stats'],  
+        #     model_params['params']['featurizer']), 
+        #     model_params['params']['targetizer'])
 
-        del f_vjp, temp2
-        gc_cuda()
+        # temp1 = jit(f_vjp)(temp2)[0]
+        # print("vjp", temp1)
+        del temp2
+        clear_caches()
 
         return temp1
     
     def compute_GEPoolGoal(
             self,  
-            model_params:FrozenDict,
-            x:jnp.ndarray
+            inputs:jnp.ndarray, 
+            targets:jnp.ndarray, 
+            model_fn:Callable, 
+            model_params:FrozenDict
         ) -> List[Union[jnp.ndarray, None]]:  
         """Compute gradients of expected training loss of x
         x is of dimension (d,)
         output: 
         """ 
         # x = x.reshape(-1, self.dim) # now x is of (nx,d)
-
-        y0hat = jit(self.ensmodel_fn)(x)   
-        
-        GEPoolGoal, GEPoolGoal_x = value_and_jacfwd(grad(compute_loss_vectorize_single, argnums=5), 0)(
-            x, 
-            y0hat,
-            self.model_fn, 
+        GEPoolGoal = grad(compute_loss_vectorize_single, argnums=5)(
+            inputs, 
+            targets,
+            model_fn, 
             model_params['batch_stats'],
             model_params['params']['featurizer'], 
             *ravel_pytree(model_params['params']['targetizer']))
-        return GEPoolGoal, GEPoolGoal_x # .transpose([1,0,2])  # (param_dim,), (nx, param_dim, x_dim)
+        return GEPoolGoal 
+    
+    def compute_GEPoolGoal_grad_and_jac(
+            self,  
+            inputs:jnp.ndarray, 
+            targets:jnp.ndarray, 
+            model_fn:Callable, 
+            model_params:FrozenDict
+        ) -> List[Union[jnp.ndarray, None]]:  
+        """Compute gradients of expected training loss of x
+        x is of dimension (d,)
+        output: 
+        """  
+        GEPoolGoal, GEPoolGoal_x = value_and_jacfwd(grad(compute_loss_vectorize_single, argnums=5), 0)(
+            inputs, 
+            targets,
+            model_fn, 
+            model_params['batch_stats'],
+            model_params['params']['featurizer'], 
+            *ravel_pytree(model_params['params']['targetizer']))
+        return GEPoolGoal, GEPoolGoal_x
     
     def compute_influence(
             self, 
             x:jnp.ndarray, 
+            model_fn:Callable, 
             model_params:FrozenDict, 
-            HinvGETask:jnp.ndarray, 
-            weight:float=1., 
-        ) -> jnp.ndarray: 
-        GEPoolGoal, GEPoolGoal_xs = self.compute_GEPoolGoal(model_params, x) 
-        
-        fval = -jit(jnp.dot)(HinvGETask, GEPoolGoal) * weight 
-        gval = -jit(jnp.matmul)(HinvGETask, GEPoolGoal_xs) * weight 
-        
-        del GEPoolGoal, GEPoolGoal_xs
-        gc_cuda()
-        return fval, gval
+            HinvGETasks:jnp.ndarray, 
+            weights:float=1., 
+        ) -> jnp.ndarray:  
+
+        y0hat = jit(self.ensmodel_fn)(x) 
+        GEPoolGoals = tree_map(
+            lambda j: self.compute_GEPoolGoal(
+                inputs=x, 
+                targets=y0hat,
+                model_fn=model_fn,
+                model_params={
+                    'params'     : model_params['params']['MLP_'+str(j)],
+                    'batch_stats': model_params['batch_stats']['MLP_'+str(j)]
+                }, 
+            ), 
+            list(range(self.kwargs['n_candidate_model']))
+        )
+        GEPoolGoals = jnp.stack(GEPoolGoals, axis=0) # (n_candidate_model, d_theta) 
+
+        fval = - vmap(lambda x, y: jit(jnp.vdot)(x, y))(HinvGETasks, GEPoolGoals) @ weights
          
-    def compute_score(
-            self,
-            x           : jnp.ndarray,
-            HinvGETasks : jnp.ndarray,
-            weights     : jnp.ndarray,
-        ) -> jnp.ndarray:
-        ## sum the individual influence values
-        return tree_map(jit(sum_helper), *tree_map(lambda kk: self.compute_influence(
-            x,
-            {'params'      : self.model_params['params']['_'.join(['MLP', str(kk)])],
-             'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(kk)])]}, 
-            HinvGETasks[kk],
-            weights[kk]
-        ), list(range(self.kwargs['n_candidate_model']))))
+        del GEPoolGoals 
+        clear_caches()
+        return fval 
     
+    def compute_influence_value_and_grad(
+            self, 
+            x:jnp.ndarray,
+            model_fn:Callable, 
+            model_params:FrozenDict, 
+            HinvGETasks:jnp.ndarray, 
+            weights:jnp.ndarray, 
+        ) -> jnp.ndarray: 
+
+        y0hat = jit(self.ensmodel_fn)(x) 
+
+        GEPoolGoal_output = tree_map(
+            lambda j: self.compute_GEPoolGoal_grad_and_jac(
+                inputs=x, 
+                targets=y0hat,
+                model_fn=model_fn,
+                model_params={
+                    'params': model_params['params']['MLP_'+str(j)],
+                    'batch_stats': model_params['batch_stats']['MLP_'+str(j)]
+                }, 
+            ), 
+            list(range(self.kwargs['n_candidate_model']))
+        )
+        GEPoolGoals   = jnp.stack([v for v, _ in GEPoolGoal_output], axis=0) # (n_candidate_model, d_theta) 
+        GEPoolGoal_xs = jnp.stack([v for _, v in GEPoolGoal_output], axis=0) # (n_candidate_model, d_theta, d) 
+         
+        fval = - vmap(lambda x, y: jit(jnp.vdot)(x, y))(HinvGETasks, GEPoolGoals) @ weights
+        gval = - vmap(lambda x, y: jit(jnp.matmul)(x, y))(HinvGETasks, GEPoolGoal_xs).T @ weights
+        
+        del GEPoolGoals, GEPoolGoal_xs
+
+        clear_caches()
+        return fval, gval
+        
     def compute_weight(self, train_x: jnp.ndarray, train_y: jnp.ndarray) -> jnp.ndarray:
         # compute ||train_y - train_y_bar||^2 / n_train 
         mss = jit(jnp.mean)((train_y - train_y.mean(axis=0))**2)
@@ -187,17 +250,21 @@ class InfluenceMax(object):
         ######### ===== COMPUTE GRADIENT OF EXPECTED GOAL====== ############
         t0 = time.time()
         GETaskGoals = tree_map(lambda j: self.compute_GETaskGoal(
-            model_params = freeze({
+            model_params = {
                 'params'      : self.model_params['params']['_'.join(['MLP',str(j)])],
                 'batch_stats' : self.model_params['batch_stats']['_'.join(['MLP',str(j)])]
-            }), 
+            }, 
             xmin         = self.xmins[j],  
             e            = self.kwargs['scaling_task']
         ), list(range(self.kwargs['n_candidate_model'])))
         GETaskGoals = jnp.stack(GETaskGoals, axis=0)
         t1 = time.time() - t0
         print("Step 1 takes {:.3f}s: Compute the gradient of expected goal for the TEST data.".format(t1)) 
-         
+        ## print info
+        for kk in range(GETaskGoals.shape[0]):
+            print("GETaskGoals[{}], (min, max)=({:.4f}, {:.4f}), mean ({:.4f})+/-({:.4f}) 1 std.".format(
+                kk, jnp.min(GETaskGoals[kk]), jnp.max(GETaskGoals[kk]), jnp.mean(GETaskGoals[kk]), jnp.std(GETaskGoals[kk])))
+        
         ######### ===== COMPUTE HESSIAN INVERSE GRADIENT OF EXPECTED GOAL ====== ############
         t0 = time.time()
         HinvGETasks = tree_map(lambda j: self.get_ihvp(
@@ -214,7 +281,7 @@ class InfluenceMax(object):
         HinvGETasks = jnp.stack(HinvGETasks, axis=0)
         
         del GETaskGoals 
-        gc_cuda() 
+        clear_caches() 
         
         ## print info
         for kk in range(HinvGETasks.shape[0]):
@@ -226,23 +293,32 @@ class InfluenceMax(object):
         
         ######### ===== COMPUTE WEIGHTED INFLUENCE SCORE ====== ############
         t0 = time.time()
-        fun_opt_infmax = Partial(self.compute_score,
-            HinvGETasks = HinvGETasks,
-            weights     = weights,
-        )
+        fun_infmax  = Partial(self.compute_influence, 
+                              model_fn=jit(self.model_fn), 
+                              model_params=self.model_params,
+                              HinvGETasks=HinvGETasks, 
+                              weights=weights)
+        vng_infmax  = Partial(self.compute_influence_value_and_grad, 
+                              model_fn=jit(self.model_fn), 
+                              model_params=self.model_params,
+                              HinvGETasks=HinvGETasks, 
+                              weights=weights)
+        
         del HinvGETasks, weights  
-        gc_cuda()  
-             
+        clear_caches()
+        
         x_Imin, Imin = global_optimization(
-            top_k           = int(self.acquire_k * self.m_kmeansplusplus),
-            fun_to_opt      = fun_opt_infmax,
-            automate_jac    = False,
-            method          = self.kwargs['search_xmin_method'],  
-            search_domain   = self.search_domain,  
-            nstart          = self.kwargs['search_xmin_nstart'],  
-            optimize_method = self.kwargs['search_xmin_opt_method'],   
-            use_double      = self.kwargs['use_double'], 
+            fun_infmax, 
+            top_k=self.kwargs['available_sample_k'],
+            nstart=self.kwargs.get('search_xmin_nstart', 100), 
+            method=self.kwargs.get('search_xmin_method', 'grid-search'),
+            optimize_method=self.kwargs.get('search_xmin_opt_method', 'trust-constr'),  
+            search_domain=self.search_domain,
+            value_and_grad=vng_infmax, 
+            tol=self.kwargs.get('search_xmin_opt_tol', 1e-4), 
+            disp=self.kwargs.get('disp',False)
         )
+        
         t1 = time.time() - t0
         print("Step 3 takes {:.3f}s: Compute optima.".format(t1))
  

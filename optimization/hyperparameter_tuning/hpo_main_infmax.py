@@ -504,8 +504,17 @@ def main():
     args, _ = parser.parse_known_args()
      
     ## Setting compute 
-    args.use_cuda = not args.no_cuda and torch.cuda.is_available()
-    args.pin_memory = True if args.use_cuda else False
+    if args.no_cuda:
+        device = "cpu"
+    else:
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+    print(f"Using {device} for computations.")
+    args.pin_memory = False if device == "cpu" else True
 
     store_name = '_'.join([
         '-'.join([args.dataset, args.net_type]),
@@ -532,7 +541,6 @@ def main():
 
         path_laaos_prefix = args.path_laaos_prefix
         target_num_acquired_samples = args.target_num_acquired_samples
-        use_cuda    = args.use_cuda
         pin_memory  = args.pin_memory
         num_workers = args.num_workers
         n_devices   = args.n_devices
@@ -542,7 +550,6 @@ def main():
         args['path_laaos_prefix'] = path_laaos_prefix
         args['num_workers'] = num_workers
         args['pin_memory']  = pin_memory
-        args['use_cuda']    = use_cuda
         args['n_devices']   = n_devices
         dtype = np.float64 if args['use_double'] else np.float32
 
@@ -564,6 +571,7 @@ def main():
                 in_distribution=args.get('shift_in_distribution', False),
                 num_workers=args['num_workers'],
                 pin_memory=args['pin_memory'],
+                device=device,
                 n_devices=args['n_devices']
             )
             if 'iterations' in resume_file and len(resume_file['iterations']) > 0:
@@ -587,11 +595,7 @@ def main():
         args = args.__dict__
         dtype = np.float64 if args['use_double'] else np.float32
     print(args)
-
-    ## Setting compute  
-    device = "cuda" if args['use_cuda'] else "cpu"
-    print(f"Using {device} for computations.")
-
+    
     if initial_to_generate:
         gendata = getattr(OptGenData, args['dataset'])(
             seed=args['seed'], 
@@ -603,7 +607,9 @@ def main():
             shift=args.get('covariate_shift', False),
             in_distribution=args.get('shift_in_distribution', False),
             num_workers=args['num_workers'],
-            pin_memory=args['pin_memory']
+            pin_memory=args['pin_memory'],
+            device=device,
+            n_devices=args['n_devices']
         )
         
         # generate initial samples
@@ -706,12 +712,18 @@ def main():
                     do_normalize_y=args['do_normalize_output'],
                     output_ensemble_xmin=True,
                     noiseed=it,
+                    device=device,
                     **args
                 )
             del base_x_embedding_fn, base_x_embedding_dim
             gc_cuda()
         
-        ignore_flag_fxmin = ignore_criterion(samples_x, new_x_nn)
+        ignore_flag_fxmin = ignore_criterion(
+            samples_x, 
+            new_x_nn, 
+            args.get('ignore_threshold', 0.01), 
+            gendata.search_domain
+        )
         ## Acquire xmin and adding to the observed samples   
         if (not ignore_flag_fxmin):
             ## Acquiring xmin 
@@ -784,6 +796,7 @@ def main():
                     do_normalize_y=args['do_normalize_output'],
                     output_ensemble_xmin=False,
                     noiseed=it,
+                    device=device,
                     **args
                 )
                 del base_x_embedding_fn, base_x_embedding_dim

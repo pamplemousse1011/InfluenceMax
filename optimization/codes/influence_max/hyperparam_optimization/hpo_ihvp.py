@@ -7,13 +7,14 @@ from jax.flatten_util import ravel_pytree
 from jax.scipy.sparse.linalg import cg
  
 from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_loss, compute_loss_vectorize, process_in_batches
-from influence_max.conjugate import conjugate_gradient   
+ 
 from flax.core.frozen_dict import FrozenDict
 
 from tqdm.auto import tqdm
 from copy import deepcopy
 
 from codes.influence_max.utils import data_loader
+from codes.influence_max.conjugate import conjugate_gradient  
 from codes.utils import generate_seed_according_to_time
 
  
@@ -120,16 +121,48 @@ def get_inverse_hvp_cg_linalg(
     targets          : (n,n_base)
     base_x_embedding : (n_base,d_base)
     x                : (d_theta,)
+    """
 
-    kwargs   
-    - pin_memory: bool=False
-    - num_workers: int=0
-    - progress_bar: bool=True
+    # targetizer_vector, targetizer_structure = ravel_pytree(model_vars['params']['targetizer'])
+    # ## Compute Hv
+    # Ax_fn=Partial(compute_Hx, 
+    #     inputs,
+    #     targets, 
+    #     base_x_embedding,
+    #     model_fn, 
+    #     model_vars['batch_stats'],
+    #     model_vars['params']['featurizer'],
+    #     targetizer_vector, 
+    #     targetizer_structure,
+    # )
+    
+    # ## Compute H^{-1}v
+    # out = cg(Ax_fn, v)
+    # # if kwargs['disp']:
+    # #     print(out.info)
+    # # x = out.x
+
+    # ## Return (H^{-1}+lambda)*v = H^{-1}v + lambda*v
+    # return out[0]  + kwargs.get('cg_scaling', 0.001) * v
+    """
+    This function solves the optimization problem to compute H^{-1}v. 
+    Here we solve:
+        H^{-1}v = argmin_y y^T (HH + lambda*I)y - (Hv)^T y
+    Compared to the classic formulation 
+        H^{-1}v = argmin_y y^T Hy - V^T y
+    - In practice the Hessian may have negative eigenvalues, since we run a SGD 
+      and the final Hessian matrix H may not at a local minimum exactly.    
+    - HH is guaranteed to be positive definite as long as H is invertible, 
+      even when H has negative eigenvalues
+    - The rate of convergence of CG depends on the condition number of HH, 
+      which can be very large if HH is ill-conditioned
+      lambda here serves as a damping term to stabilize the solution and 
+      to encourage faster convergence when HH is ill-conditioned
     """
     
     targetizer_vector, targetizer_structure = ravel_pytree(model_vars['params']['targetizer'])
-    ## Compute Hv
-    Ax_fn=Partial(compute_Hx, 
+    ## Compute (HH + lambda*I)v
+    Ax_fn=Partial(compute_H2x, 
         inputs,
         targets, 
         base_x_embedding,
@@ -138,16 +171,28 @@ def get_inverse_hvp_cg_linalg(
         model_vars['params']['featurizer'],
         targetizer_vector, 
         targetizer_structure,
+        kwargs['cg_lambda']
     )
-    
+    ## Compute b=Hv  
+    b=compute_b(
+        inputs,
+        targets,
+        base_x_embedding,
+        model_fn,
+        model_vars['batch_stats'],
+        model_vars['params']['featurizer'],
+        targetizer_vector, 
+        targetizer_structure,
+        v
+    )
     ## Compute H^{-1}v
-    out = cg(Ax_fn, v)
+    out = cg(Ax_fn, b)
     # if kwargs['disp']:
     #     print(out.info)
     # x = out.x
 
     ## Return (H^{-1}+lambda)*v = H^{-1}v + lambda*v
-    return out[0]  + kwargs['cg_lambda'] * v
+    return out[0] + kwargs.get('cg_scaling', 0.) * v
 
 def compute_Hx_single(
     input           : jnp.ndarray,

@@ -44,10 +44,13 @@ class OptDataModule(pl.LightningDataModule):
         self.n_train    = len(self.data_train) 
     
     def get_y_stats(self, y:Tensor, do_normalize_y:bool=False):
+        """
+        y: (n,1) or (n,)
+        """
         if do_normalize_y: 
             return zero_mean_unit_var_normalization(y)
         else:
-            return y, torch.zeros_like(y.mean(0)), torch.ones_like(y.std(0))
+            return y, torch.zeros_like(y.mean()), torch.ones_like(y.std())
         
     def generate_indicator_jn(self, n_candidate_model:int, n_ensemble_model:int, data:TensorDataset):
         n_train = len(data) 

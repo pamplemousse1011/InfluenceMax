@@ -11,9 +11,8 @@ import dataclasses
 
 from typing import Sequence, Callable, List, Union
 import time  
-from codes.influence_max.hyperparam_optimization.hpo_ihvp import inverse_hvp_fn
-from codes.influence_max.model_module import compute_enspred, intermediate_grad_fn
-from codes.influence_max.hyperparam_optimization.hpo_model_module import process_in_batches
+from codes.influence_max.hyperparam_optimization.hpo_ihvp import inverse_hvp_fn 
+from codes.influence_max.hyperparam_optimization.hpo_model_module import process_in_batches, compute_enspred, intermediate_grad_fn
 from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_enspred_grad_on_x_SINGLE 
 from codes.influence_max.hyperparam_optimization.hpo_model_module import compute_loss_grad_and_jac, compute_loss_grad_on_vars
 from codes.influence_max.global_optimizer import global_optimization 
@@ -70,8 +69,11 @@ class InfluenceMax(object):
         ## Input xmin: (d,) on TEST loss
         xmin = xmin.reshape(-1)
         
-        ## Compute temp3 = ∇𝑥 𝜇(𝜃,𝑥) here we use ∇𝑥 𝜇(𝜃hat,𝑥), 
-        ## where 𝜇(𝜃hat,𝑥) is the jackknife estimator for the true 𝜇(𝜃,𝑥) 
+        """ Compute ∇𝑥 𝜇(𝜃,𝑥) 
+        Here we compute 
+            temp3 = ∇𝑥 𝜇(𝜃,𝑥) ≈ ∇𝑥 𝜇(𝜃hat,𝑥), 
+        where 𝜇(𝜃hat,𝑥) is the estimator for the true 𝜇(𝜃,𝑥) 
+        """
         temp3 = process_in_batches(
             Partial(compute_enspred_grad_on_x_SINGLE, 
                     model_fn, 
@@ -88,8 +90,10 @@ class InfluenceMax(object):
         #     xmin
         # )
 
-        ## Compute temp2 = -[∂2/∂𝑥2 𝜇(b,𝑥)]^{−1}  \dot [∇𝑥 𝜇(𝜃,𝑥)] 
-        ##               = -[∂2/∂𝑥2 𝜇(b,𝑥)]^{−1}  \dot temp3
+        """ Compute temp2 
+        temp2 = -[∂2/∂𝑥2 𝜇(b,𝑥)]^{−1}  \dot [∇𝑥 𝜇(𝜃,𝑥)] 
+              = -[∂2/∂𝑥2 𝜇(b,𝑥)]^{−1}  \dot temp3
+        """
         partial2_mu_x = process_in_batches(
             lambda be: jacfwd(jacrev(model_fn, argnums=2), argnums=2)(
                 model_vars, 
@@ -114,7 +118,7 @@ class InfluenceMax(object):
         del partial2_mu_x, temp3
         clear_caches()
 
-        ## Compute temp1 = [∂2𝜇(b,𝑥)/∂𝑥∂b] \dot temp2
+        """ Compute temp1 = [∂2𝜇(b,𝑥)/∂𝑥∂b] \dot temp2"""
         temp1 = process_in_batches(
             lambda be: jvp(Partial(
                 intermediate_grad_fn,

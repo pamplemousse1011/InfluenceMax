@@ -236,6 +236,13 @@ def create_experiment_config_argparser(parser):
     )
 
     parser.add_argument(
+        "--leave_one_out",
+        action="store_true",
+        default=False,
+        help="whether use leave_one_out resampling",
+    )
+
+    parser.add_argument(
         "--sto_n_resample",
         type=int,
         default=50,
@@ -294,8 +301,15 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--cg_lambda",
         type=float,
-        default=0.001,
+        default=1e-7,
         help="The damping term to stabilize the solution for conjugate gradient",
+    )
+
+    parser.add_argument(
+        "--cg_scaling",
+        type=float,
+        default=1e-3,
+        help="scaling factor in conjugate gradient",
     )
 
     parser.add_argument(
@@ -451,8 +465,8 @@ def main():
     initial_to_generate = True
     # Acquisition step is initialized to be 0
     initial_iterations = []
+    
     it = 0
-
     if args.resume and os.path.isfile(resume_filename):
         resume_file = laaos.safe_load(resume_filename)
         # if 'iterations' in resume_file and len(resume_file['iterations']) > 0:
@@ -488,7 +502,16 @@ def main():
                 if lastitem['step'] >= args.target_num_acquired_samples:
                     print("DONE.")
                     return
-    
+        resume_args['path_laaos_prefix'] = args.path_laaos_prefix
+        
+        try: 
+            resume_args['path_data'] = args.path_data
+        except:
+            pass 
+        try:
+            resume_args['path_logs'] = args.path_logs
+        except:
+            pass
         resume_args['target_num_acquired_samples'] = args.target_num_acquired_samples
         args = resume_args
     else:
@@ -536,10 +559,19 @@ def main():
             iterations.append(item)
     
     ## Setting compute 
-    args['use_cuda'] = not args['no_cuda'] and torch.cuda.is_available()
-    device = torch.device("cuda" if args['use_cuda'] else "cpu")
-    args['pin_memory'] = True if args['use_cuda'] else False
+    if args['no_cuda']:
+        device = "cpu"
+    else:
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu" 
+
+    args['pin_memory'] = False if device == "cpu"  else True
     print(f"Using {device} for computations.")
+
 
     # Updating the number of initial sample points
     n_init = samples_x.shape[0]
@@ -570,10 +602,16 @@ def main():
                 do_normalize_y       = args.get('do_normalize_output', True),
                 output_ensemble_xmin = True,
                 noiseed              = it,
+                device               = device,
                 **args
             )
             
-        ignore_flag_fxmin = ignore_criterion(samples_x, new_x_nn)
+        ignore_flag_fxmin = ignore_criterion(
+            samples_x, 
+            new_x_nn, 
+            threshold=args.get('ignore_threshold', 0.001),
+            search_domain=gendata.search_domain
+        )
         if (not ignore_flag_fxmin):        
             # acquire noisy observations of xmin and add to the observed samples
             new_y_nn = gendata.evaluate(np.array(new_x_nn))
@@ -628,6 +666,7 @@ def main():
                     do_normalize_y       = args.get('do_normalize_output', True),
                     output_ensemble_xmin = False,
                     noiseed              = it,
+                    device               = device,
                     **args
                 )
 
@@ -662,12 +701,22 @@ def main():
             else:
                 raise ValueError(f"Acquisition method not implemented, received {args['acquisition_method']}.")
 
-            ignore_flag = ignore_criterion(samples_x, new_x)
+            ignore_flag = ignore_criterion(
+                samples_x, 
+                new_x, 
+                threshold=args.get('ignore_threshold', 0.001),
+                search_domain=gendata.search_domain
+            )
             if ignore_flag: 
                 scores = np.full((args['available_sample_k'],), 'random') 
                 while ignore_flag:
                     new_x = gendata.gen_samples(args['available_sample_k'], evaluate = False)   
-                    ignore_flag = ignore_criterion(samples_x, new_x)
+                    ignore_flag = ignore_criterion(
+                        samples_x, 
+                        new_x, 
+                        threshold=args.get('ignore_threshold', 0.001),
+                        search_domain=gendata.search_domain
+                    )
         
         # observe new data points 
         new_y = gendata.evaluate(np.array(new_x)) 

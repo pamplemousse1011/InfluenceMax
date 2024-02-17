@@ -331,12 +331,42 @@ class StoModel(pl.LightningModule):
             self.train_step_numsamp.append(b)
         return {'loss':  loss}
     
+    def on_train_epoch_end(self): 
+        if self.save_logpath is not None:
+            avg_loss = torch.stack(self.train_step_sumloss).sum(0) / sum(self.train_step_numsamp)
+            self.train_epoch_outputs.append((self.current_epoch, avg_loss.item()))
+
+            # free memory
+            self.train_step_sumloss.clear()  
+            self.train_step_numsamp.clear()  
+
+    def on_train_end(self):
+        if self.save_logpath is not None:
+            train_num_epochs = len(self.train_epoch_outputs)
+            with open(self.save_logpath[0], 'a') as f:
+                f.write(f"epoch, train_loss\n")
+                for i in range(train_num_epochs):
+                    epoch, train_loss = self.train_epoch_outputs[i]
+                    f.write(f"{epoch}, {train_loss}\n") 
+         
+            val_loss_name = [f'val_loss_{i}' for i in range(self.n_model)]
+            val_num_epochs = len(self.val_epoch_outputs)
+            with open(self.save_logpath[1], 'a') as f:
+                f.write(f"epoch, {val_loss_name}\n")
+                for i in range(val_num_epochs): 
+                    epoch, val_loss = self.val_epoch_outputs[i]
+                    f.write(f"{epoch}, {val_loss}\n")
+
     def validation_step(self, batch:Tuple[Tensor, ...], batch_idx):
+        """
+        x: (b, d)
+        y: (b,)
+        """
         x, y = batch
         b = x.shape[0]
         
         if self.n_noise > 0:
-            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*b))).reshape(-1, x.shape[1:])
+            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*x.ndim))).reshape(-1, *x.shape[1:])
             ## Model prediction
             y_hat_rep = self(x_rep)         # (n_model, b*noise_n_resample, out_dim=1) 
             y_hat = y_hat_rep.reshape(self.n_model, self.noise_n_resample, b).mean(1) # (n_model, b)
@@ -379,7 +409,7 @@ class StoModel(pl.LightningModule):
         b = x.shape[0]
         
         if self.n_noise > 0:
-            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*b))).reshape(-1, x.shape[1:])
+            x_rep = torch.tile(x, (self.noise_n_resample, *([1]*x.ndim))).reshape(-1, *x.shape[1:])
             ## Model prediction
             y_hat_rep = self(x_rep)         # (n_model, b*noise_n_resample, out_dim=1) 
             y_hat = y_hat_rep.reshape(self.n_model, self.noise_n_resample, b).mean(1) # (n_model, b)
@@ -531,13 +561,13 @@ class RntModel(pl.LightningModule):
          
     def training_step(self, batch:Tuple[Tensor,Tuple[Tensor, ...]], batch_idx:int):
         indicator_jn, (x, y) = batch
-        b = x.shape
+        b = x.shape[0]
         ## Model prediction
         y_hat = self(x).squeeze(-1)                 # (n_model, b) 
         ## Compute loss
         loss = torch.stack([
             F.mse_loss(
-                input = y_hat[i][indicator_jn[:,i]], 
+                input  = y_hat[i][indicator_jn[:,i]], 
                 target = y[indicator_jn[:,i]],
             )
             for i in range(self.n_model)
@@ -546,9 +576,11 @@ class RntModel(pl.LightningModule):
         
         ## Logging to TensorBoard by default
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        
         if self.save_logpath is not None:
             self.train_step_sumloss.append(loss.detach()*b)
             self.train_step_numsamp.append(b)
+        
         return {'loss':  loss}
     
     def on_train_epoch_end(self): 
@@ -580,6 +612,7 @@ class RntModel(pl.LightningModule):
 
     def validation_step(self, batch:Tuple[Tensor, ...], batch_idx):
         x, y = batch
+        b = x.shape[0]
         ## Model prediction
         y_hat = self(x).squeeze(-1)   # (n_model, b) 
         ## Compute loss
@@ -589,13 +622,12 @@ class RntModel(pl.LightningModule):
             reduction = 'none')                            # (n_model, b)
             
         loss = loss.sum(-1)                                # (n_model, )
-        
-        self.log('val_loss', loss.mean()/x.shape[0], on_step=False, on_epoch=True, prog_bar=True)
+        self.log('val_loss', loss.mean().divide(b), on_step=False, on_epoch=True, prog_bar=True)
         if self.save_logpath is not None:
             self.val_step_sumloss.append(loss)
-            self.val_step_numsamp.append(x.shape[0])
+            self.val_step_numsamp.append(b)
 
-        return {'val_loss': loss.mean()}
+        return {'val_loss': loss.mean().divide(b)}
 
     def on_validation_epoch_end(self): 
         if self.save_logpath is not None:
@@ -613,6 +645,7 @@ class RntModel(pl.LightningModule):
     
     def test_step(self, batch:Tuple[Tensor, ...], batch_idx):
         x, y = batch
+        b = x.shape[0]
         ## Model prediction
         y_hat = self(x).squeeze(-1)   # (n_model, b) 
         ## Compute loss
@@ -624,7 +657,7 @@ class RntModel(pl.LightningModule):
         loss = loss.sum(-1)                   # (n_model, )
         
         self.test_output_list.append(loss)
-        self.test_batchsize_list.append(x.shape[0])
+        self.test_batchsize_list.append(b)
     
     def on_test_epoch_end(self):
         n_train  = sum(self.test_batchsize_list) 

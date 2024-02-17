@@ -7,8 +7,9 @@ import torch
 from torch import Tensor
 import numpy as np
 
-from jax import random, linear_util as lu 
-from jax._src.api_util import argnums_partial  
+from jax import random 
+from jax._src.api_util import argnums_partial 
+from jax._src import linear_util as lu 
 from jax import vmap  
 import jax.numpy as jnp
 from jax import lax

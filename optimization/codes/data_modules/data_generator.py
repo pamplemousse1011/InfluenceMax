@@ -122,32 +122,6 @@ class OptimizationDataGenerator(ABC):
         pass
         
 class ImageDataGenerator(OptimizationDataGenerator):
-    """
-    Arguments: 
-    ================
-    noise_level: float positive 
-        sample var = noise_level * var(y) 
-    high_dim: int 
-        Number of total inputs. 
-        See _high_dim and _active_dim in Attributes  
-    low_dim: int
-        Number of variables to generate 
-        the lowrank high-dimensional inputs
-    seed: int 
-        To generate random state
-    sample_var: float (None by default) 
-        If sample_var = -1, noise_level * var(y),
-        where y of size 10000 are randomly sampled.  
-
-    Attributes:
-    ================
-    _high_dim: int
-        Number of total inputs. 
-    _active_dim: int 
-        Number of active variables in Branin function
-    _sample_var: float
-        Noise variance  
-    """
     def __init__(
         self, 
         use_double           : bool=False,
@@ -160,6 +134,7 @@ class ImageDataGenerator(OptimizationDataGenerator):
         use_validation       : bool=False, 
         num_workers          : int=5,
         pin_memory           : bool=False,
+        device               : str="cpu",            
         n_devices            : int=1,
         progress_bar         : bool=False, 
         **kwargs
@@ -172,7 +147,7 @@ class ImageDataGenerator(OptimizationDataGenerator):
         self.log_dir = log_dir
         self.use_validation = use_validation
         self.net_type = net_type
-        self.device = "gpu" if torch.cuda.is_available() else "cpu"
+        self.device = device
         self.max_epochs = MAXEPOCHS[net_type]
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -181,7 +156,7 @@ class ImageDataGenerator(OptimizationDataGenerator):
         self.kwargs_trainer = {
             'max_epochs': self.max_epochs, 
             'min_epochs': min(50, self.max_epochs),
-            'accelerator': self.device,
+            'accelerator': device,
             'enable_model_summary': True,
             'check_val_every_n_epoch': log_interval if use_validation else 1,
             'default_root_dir': log_dir,
@@ -651,7 +626,7 @@ class Branin(NoisyFunctionGenerator):
                          sample_var, noise_level, 
                          **kwargs)
         # Update search domain
-        self._search_domain = np.repeat(
+        self.search_domain = np.repeat(
             [[0., 1.]], self.dim, axis=0
         ).astype(self.npdtype) 
 
@@ -666,7 +641,7 @@ class Branin(NoisyFunctionGenerator):
 
     def evaluate_true(self, x:np.ndarray): 
         """
-        Only the first _active_dim inputs matter 
+        Only the first active_dim inputs matter 
         """
         a = 1 / 51.95 
         b = 5.1 / (4 * (np.pi ** 2.0))
@@ -713,7 +688,7 @@ class Dropwave(NoisyFunctionGenerator):
     
     def evaluate_true(self, x:np.ndarray): 
         """
-        Only the first _active_dim inputs matter 
+        Only the first active_dim inputs matter 
         """ 
 	
         frac1 = 1 + np.cos(12*np.sqrt(x[...,0]**2+x[...,1]**2))
@@ -766,7 +741,7 @@ class GoldSteinPrice(NoisyFunctionGenerator):
 
     def evaluate_true(self, x:np.ndarray):
         """
-        Only the first _active_dim inputs matter 
+        Only the first active_dim inputs matter 
         """
         if self.scaled:
             x1bar = 4*x[...,0] - 2
@@ -827,7 +802,7 @@ class Ackley(NoisyFunctionGenerator):
         
     def evaluate_true(self, x:np.ndarray):
         """
-        Only the first _active_dim inputs matter 
+        Only the first active_dim inputs matter 
         """
         a = 20
         b = 0.2
@@ -855,7 +830,7 @@ class Rastr(NoisyFunctionGenerator):
                          **kwargs)
         
         # Update search_domain
-        self._search_domain = np.repeat(
+        self.search_domain = np.repeat(
             [[-5.12, 5.12]], self.dim, axis=0
         ).astype(self.npdtype) 
 
@@ -901,7 +876,7 @@ class Hartmann6(NoisyFunctionGenerator):
                          **kwargs)
         
         # Update search_domain
-        self._search_domain = np.repeat(
+        self.search_domain = np.repeat(
             [[0., 1.]], self.dim, axis=0
         ).astype(self.npdtype)
 

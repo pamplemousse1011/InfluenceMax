@@ -15,45 +15,51 @@ from codes.influence_max.hyperparam_optimization.hpo_model_module_pytorch import
 from codes.influence_max.hyperparam_optimization.hpo_model_module import RntJMLPSingle
 import torch
 
-n_hidden = [100,50]
-n_model  = 5
+def main():
+    n_hidden = [100,50]
+    n_model  = 5
 
-resmodel = RntModel(*n_hidden,
-    base_x_embedding_fn=None,
-    base_x_embedding_dim=512,
-    n_model=n_model, 
-    search_domain=torch.from_numpy(np.array([[0.,1.],[-1.,2.],[3.,4.],[-2.2,-1.]])),
-    trans_method="rbf",
-    trans_rbf_nrad=5,
-    use_double=False, 
-    learning_rate=0.001, 
-    weight_decay=0.01,
-    gamma=0.1,  
-    dropout_rate=0,
-    diable_base_x_embedding_training=True,
-    n_noise=2
-)
+    resmodel = RntModel(*n_hidden,
+        base_x_embedding_fn=None,
+        base_x_embedding_dim=512,
+        n_model=n_model, 
+        search_domain=torch.from_numpy(np.array([[0.,1.],[-1.,2.],[3.,4.],[-2.2,-1.]])),
+        trans_method="rbf",
+        trans_rbf_nrad=5,
+        use_double=False, 
+        learning_rate=0.001, 
+        weight_decay=0.01,
+        gamma=0.1,  
+        dropout_rate=0,
+        diable_base_x_embedding_training=True,
+        n_noise=2
+    )
 
-## Creating the preprocess function...
-latent_embedding_fn = preprocess(
-    mu     = jnp.array(resmodel.latent_embedding_fn.mu.cpu().numpy()), 
-    gamma  = jnp.array(resmodel.latent_embedding_fn.gamma.cpu().numpy()),
-    method = "rbf")
+    ## Creating the preprocess function...
+    latent_embedding_fn = preprocess(
+        mu     = jnp.array(resmodel.latent_embedding_fn.mu.cpu().numpy()), 
+        gamma  = jnp.array(resmodel.latent_embedding_fn.gamma.cpu().numpy()),
+        method = "rbf")
 
-resmodel_jax = RntJMLPSingle(n_hidden=n_hidden,latent_embedding_fn=latent_embedding_fn)
+    resmodel_jax = RntJMLPSingle(n_hidden=n_hidden,latent_embedding_fn=latent_embedding_fn)
 
-## Reconstruct RntJMLPSimple with rnt_parameter_reconstruct
-variables_reconstruct = rnt_parameter_reconstruct(resmodel.nets)
+    ## Reconstruct RntJMLPSimple with rnt_parameter_reconstruct
+    variables_reconstruct = rnt_parameter_reconstruct(resmodel.nets)
 
-## Check the results
-b = jnp.array(np.random.normal(0,1,(512,)))
-x = jnp.array(np.random.normal(0,1,(4,)))
+    ## Check the results
+    b = jnp.array(np.random.normal(0,1,(512,)))
+    x = jnp.array(np.random.normal(0,1,(4,)))
 
-resmodel.eval()
-out = resmodel(torch.from_numpy(np.array(b)),torch.from_numpy(np.array(x)))
-for j in range(n_model):
-    out_reconstructed = resmodel_jax.apply(
-        {'params': variables_reconstruct['params'][f'MLP_{j}'],
-        'batch_stats': variables_reconstruct['batch_stats'][f'MLP_{j}']}, b, x)
-    print(float(out_reconstructed) - out[j].item())
-     
+    resmodel.eval()
+    out = resmodel(torch.from_numpy(np.array(b)),torch.from_numpy(np.array(x)))
+    for j in range(n_model):
+        out_reconstructed = resmodel_jax.apply(
+            {'params': variables_reconstruct['params'][f'MLP_{j}'],
+            'batch_stats': variables_reconstruct['batch_stats'][f'MLP_{j}']}, b, x)
+        print("{}-th model difference: {:.4f}".format(j, float(out_reconstructed) - out[j].item()))
+        
+
+if __name__ == "__main__":
+    torch.set_num_threads(1)
+    main()
+

@@ -1,6 +1,7 @@
 from jax import vmap, jit, grad, tree_map, random 
 import jax.numpy as jnp 
-from jax.tree_util import Partial  
+from jax.tree_util import Partial
+from jax.flatten_util import ravel_pytree
 
 # !pip install --upgrade -q git+https://github.com/google/flax.git
 from flax.core import freeze 
@@ -9,7 +10,7 @@ from flax import linen as nn
 
 from codes.influence_max.utils import value_and_jacfwd
 from codes.utils import generate_seed_according_to_time, zero_mean_unit_var_denormalization
-from codes.influence_max.model_module import StoJBlock, StoJSIN, compute_ens_from_embedding, RntJBlock
+from codes.influence_max.model_module import StoJBlock, StoJSIN, RntJBlock
 
 from typing import (
     Any,
@@ -50,7 +51,62 @@ def process_in_batches(fn: Callable[[jnp.ndarray], Any], input:jnp.ndarray, n_ba
         raise ValueError(f"Received reduction={reduction}. Only accepted 'none', 'sum' or 'mean'.")
     
     return ret
+
+def compute_ens_from_embedding(x:jnp.ndarray, MLPs:nn.Module, stochastic:bool, resample_size:int) -> jnp.ndarray:
+    """
+    x: embedding (d,)
+    
+    if stochastic:
+    - First sample new response data, x_rep, by creating identical copies, 
+        of shape (n_base * resample_size, n_dim). 
+    - Then pass the response data into model and obtain samples, where
+        samples[n_base*(i-1):n_sample*i,:] contains one sample for each data point, 
+        for i = 1, ..., resample_size
+    """
+    n_model = len(MLPs)
+
+    if stochastic > 0:
+        ## Sample new response data
+        emb_rep = jnp.tile(x, (resample_size, 1))                    # (resample_size, d)
+
+        ## Pass into model and average over n_model
+        output = jnp.stack(
+            [MLPs[str(ii)](emb_rep) 
+            for ii in range(n_model)],
+            axis = 0
+        ).mean(0)                                                    # (resample_size, out_dim=1)
+    
+    else: 
+        output = jnp.stack(
+            [MLPs[str(ii)](x) 
+            for ii in range(n_model)],
+            axis = 0
+        ).mean(0)                                                    # (1, out_dim=1) 
         
+    ## Average the resamples
+    return output.mean(-2).squeeze(-1)                               # (,)
+
+def compute_enspred(
+        model_fn:Callable[[FrozenDict,jnp.ndarray],jnp.ndarray], 
+        model_vars:FrozenDict,  
+        *args,
+        **kwargs 
+    ) -> jnp.ndarray:
+    output = jnp.vstack(
+        tree_map(
+            lambda j: model_fn(
+                freeze({
+                    'params'      : model_vars['params']['MLP_'+str(j)],
+                    'batch_stats' : model_vars['batch_stats']['MLP_'+str(j)]
+                }),
+                *args,
+                **kwargs
+            ), 
+            list(range(len(model_vars['params'])))
+        )      # (n_model,out_dim=1)
+    ).mean()  # (1,)
+    return output
+
 class StoJMLPBatch(nn.Module):
     n_hidden             : Sequence[int]
     latent_embedding_fn : Callable[[jnp.ndarray], jnp.ndarray]
