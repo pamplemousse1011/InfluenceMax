@@ -349,10 +349,7 @@ class InfluenceMax(object):
         GETaskGoals = jnp.stack(GETaskGoals, axis=0)          # (n_candidate_model, d_theta)
         t1 = time.time() - t0
         print("Step 1 takes {:.3f}s: Compute the gradient of expected goal for the TEST data.".format(t1))
-        for kk in range(GETaskGoals.shape[0]):
-            print("GETaskGoals[{}], (min, max)=({:.4f}, {:.4f}), mean ({:.4f})+/-({:.4f}) 1 std.".format(
-                kk, jnp.min(GETaskGoals[kk]), jnp.max(GETaskGoals[kk]), jnp.mean(GETaskGoals[kk]), jnp.std(GETaskGoals[kk])))
-
+        
         t0 = time.time() 
         HinvGETasks = tree_map(lambda j: self.get_ihvp(
             v          = GETaskGoals[j], 
@@ -369,15 +366,9 @@ class InfluenceMax(object):
         
         del GETaskGoals 
         clear_caches() 
-
-        HinvGETasks = jnp.stack(HinvGETasks, axis=0)         # (n_candidate_model, d_theta)
-        for kk in range(HinvGETasks.shape[0]):
-            print("HinvGETasks[{}], (min, max)=({:.4f}, {:.4f}), mean ({:.4f})+/-({:.4f}) 1 std.".format(
-                kk, jnp.min(HinvGETasks[kk]), jnp.max(HinvGETasks[kk]), jnp.mean(HinvGETasks[kk]), jnp.std(HinvGETasks[kk])))
-
+        
         t1 = time.time() - t0
         print("Step 2 takes {:.3f}s: Compute the Hessian inverse vector product.".format(t1))
- 
       
         t0 = time.time()
         fun_infmax  = Partial(self.compute_influence, 
