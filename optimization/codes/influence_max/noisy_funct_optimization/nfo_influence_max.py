@@ -15,9 +15,9 @@ import time
 
 from codes.influence_max.global_optimizer import global_optimization 
 from codes.influence_max.model_module import intermediate_grad_fn
-from codes.influence_max.noisy_funct_optimization.nfo_model_module import compute_loss_vectorize_single, jac_func
+from codes.influence_max.noisy_funct_optimization.nfo_model_module import compute_loss_vectorize_single
 from codes.influence_max.noisy_funct_optimization.nfo_ihvp import inverse_hvp_fn
-from codes.influence_max.utils import value_and_jacfwd, sum_helper
+from codes.influence_max.utils import value_and_jacfwd
 
 @dataclasses.dataclass
 class AcquisitionBatch:
@@ -102,18 +102,7 @@ class InfluenceMax(object):
             (xmin,), 
             (temp2,)
         )[1]
-
-        # print("jvp", temp1)
-        # _, f_vjp = vjp(Partial(
-        #     jac_func,
-        #     jit(self.model_fn),
-        #     xmin,    
-        #     model_params['batch_stats'],  
-        #     model_params['params']['featurizer']), 
-        #     model_params['params']['targetizer'])
-
-        # temp1 = jit(f_vjp)(temp2)[0]
-        # print("vjp", temp1)
+        
         del temp2
         clear_caches()
 
@@ -260,10 +249,6 @@ class InfluenceMax(object):
         GETaskGoals = jnp.stack(GETaskGoals, axis=0)
         t1 = time.time() - t0
         print("Step 1 takes {:.3f}s: Compute the gradient of expected goal for the TEST data.".format(t1)) 
-        ## print info
-        for kk in range(GETaskGoals.shape[0]):
-            print("GETaskGoals[{}], (min, max)=({:.4f}, {:.4f}), mean ({:.4f})+/-({:.4f}) 1 std.".format(
-                kk, jnp.min(GETaskGoals[kk]), jnp.max(GETaskGoals[kk]), jnp.mean(GETaskGoals[kk]), jnp.std(GETaskGoals[kk])))
         
         ######### ===== COMPUTE HESSIAN INVERSE GRADIENT OF EXPECTED GOAL ====== ############
         t0 = time.time()
@@ -282,11 +267,6 @@ class InfluenceMax(object):
         
         del GETaskGoals 
         clear_caches() 
-        
-        ## print info
-        for kk in range(HinvGETasks.shape[0]):
-            print("HinvGETasks[{}], (min, max)=({:.4f}, {:.4f}), mean ({:.4f})+/-({:.4f}) 1 std.".format(
-                kk, jnp.min(HinvGETasks[kk]), jnp.max(HinvGETasks[kk]), jnp.mean(HinvGETasks[kk]), jnp.std(HinvGETasks[kk])))
         
         t1 = time.time() - t0
         print("Step 2 takes {:.3f}s: Compute the Hessian inverse vector product.".format(t1))

@@ -83,6 +83,7 @@ class OptDataModule(pl.LightningDataModule):
             self.data_train, 
             batch_size=min(self.batch_size, self.n_train), 
             drop_last=True,
+            shuffle=True,
             **self.kwargs
         ) 
         return loader_data 

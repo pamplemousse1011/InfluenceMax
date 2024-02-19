@@ -96,10 +96,10 @@ class StoJMLP(nn.Module):
         - Then pass the response data into model and obtain samples
         """ 
 
-        ## Get x embeddings, (d)
+        ## Get x embeddings (..., d)
         emb = self.latent_embedding_fn(x)    
         
-        ## Get model output ()
+        ## Get model output (...,)
         output = self.compute_output(emb) 
         
         ## Denormalize
@@ -107,9 +107,10 @@ class StoJMLP(nn.Module):
         return output
 
 class StoJENS(nn.Module):
-    n_model              : int 
-    n_hidden             : Sequence[int] 
-    latent_embedding_fn : Callable[[jnp.ndarray], jnp.ndarray] 
+    n_model_all          : int 
+    n_model_loo          : int
+    n_hidden             : Sequence[int]
+    latent_embedding_fn  : Callable[[jnp.ndarray], jnp.ndarray]
     ymean                : float = 0.
     ystd                 : float = 1.
     dtype                : Dtype = jnp.float32 
@@ -118,8 +119,11 @@ class StoJENS(nn.Module):
     noise_std            : float = 1.0
     noise_n_resample     : int   = 100
     key                  : int   = generate_seed_according_to_time(1)[0]
-
+    """
+    ENS: only n_model_all is used to compute outputs
+    """
     def setup(self): 
+        self.n_model = self.n_model_all
         keys  = generate_seed_according_to_time(self.n_model)
         modulelist = {} 
         for ii in range(self.n_model):
@@ -136,16 +140,16 @@ class StoJENS(nn.Module):
     def __call__(self, x:jnp.ndarray):
         """
         INPUT  
-        x : (d,) or (1, d)
+        x : (..., n_dim)
 
         RETURN
-        (,)
+        (...,)
         """
 
-        ## Get x embeddings, (d_2,)
-        emb = self.latent_embedding_fn(x.reshape(-1))  
+        ## Get x embeddings, (..., d)
+        emb = self.latent_embedding_fn(x)  
 
-        ## Get model output, (,)
+        ## Get model output, (...,)
         output = compute_ens_from_embedding(
             emb, 
             self.MLP,
@@ -173,8 +177,7 @@ class StoJJAC(nn.Module):
     n_model_all          : int 
     n_model_loo          : int
     n_hidden             : Sequence[int] 
-    latent_embedding_fn : Callable[[jnp.ndarray], jnp.ndarray]
-    base_x_embedding     : jnp.ndarray
+    latent_embedding_fn  : Callable[[jnp.ndarray], jnp.ndarray] 
     ymean                : float = 0.
     ystd                 : float = 1.
     dtype                : Dtype = jnp.float32 
@@ -201,10 +204,10 @@ class StoJJAC(nn.Module):
 
     def compute_output(self, emb: jnp.ndarray) -> jnp.ndarray:
         """
-        emb: (d,)
+        emb: (...,d)
         """
         # Concatenate the embeddings
-        output = compute_ens_from_embedding(emb, self.MLP, (self.n_noise>0), self.n_resample)
+        output = compute_ind_from_embedding(emb, self.MLP, (self.n_noise>0), self.noise_n_resample)
         
         ## Compute bias-corrected Jackknife estimate
         term1 = output[:self.n_model_all].mean(0)
@@ -217,13 +220,13 @@ class StoJJAC(nn.Module):
     def __call__(self, x:jnp.ndarray):
         """
         INPUT  
-        x : (d,) or (1, d)
+        x : (..., n_dim)
 
         RETURN
-        (,)
+        (...,)
         """
         ## Get x embeddings 
-        emb = self.latent_embedding_fn(x.reshape(-1))            
+        emb = self.latent_embedding_fn(x)            
          
         ## Get model output
         output = self.compute_output(emb)
@@ -287,7 +290,8 @@ class RntJMLP(nn.Module):
         return output
 
 class RntJENS(nn.Module):
-    n_model              : int 
+    n_model_all          : int 
+    n_model_loo          : int 
     n_hidden             : Sequence[int] 
     latent_embedding_fn  : Callable[[jnp.ndarray], jnp.ndarray] 
     ymean                : float = 0.
@@ -298,8 +302,11 @@ class RntJENS(nn.Module):
     noise_std            : float = 1.0
     noise_n_resample     : int   = 100
     key                  : int   = generate_seed_according_to_time(1)[0]
-    
+    """
+    ENS: only n_model_all is used to compute outputs
+    """
     def setup(self): 
+        self.n_model = self.n_model_all
         modulelist = {} 
         for ii in range(self.n_model):
             modulelist[str(ii)] = RntJSIN(
@@ -328,24 +335,73 @@ class RntJENS(nn.Module):
 
         return output
 
-def jac_func(
-        model_fn    : Callable[[FrozenDict, jnp.ndarray], jnp.ndarray], 
-        x           : jnp.ndarray, 
-        batch_stats : FrozenDict,
-        featurizer  : FrozenDict, 
-        targetizer  : FrozenDict
-    ) -> jnp.ndarray:
-    """Compute ∂𝜇(𝜃,𝑥)/∂𝑥
-    Input x of size (d,)
-    """ 
-    res = jit(grad(model_fn, argnums=1))(
-        {
-            'params': {'featurizer': featurizer, 'targetizer': targetizer},
-            'batch_stats': batch_stats
-        }, 
-        x
-    )
-    return res
+class RntJJAC(nn.Module):
+    """Compute bias-corrected jackknife estimate of μ
+    μ_{all,j}   : Esimate of μ with all samples
+    μ_{loo,(i)} : LEAVE-ONE-OUT estimate of μ without i-th sample 
+    The bias-corrected jackknife estimate of μ
+        μ{Jack} = n/m Σ_{j=1}^m μ_{all,j} - (n-1)/n Σ_{i=1}^n μ_{loo,(i)}   
+    We compute the following
+        term1 = 1/m * Σ_{j=1}^m μ_{all,j}
+        term2 = 1/n * Σ_{i=1}^n μ_{loo,(i)} 
+    return 
+        n*term1 - (n-1)*term2
+    """
+    n_model_all          : int 
+    n_model_loo          : int
+    n_hidden             : Sequence[int] 
+    latent_embedding_fn  : Callable[[jnp.ndarray], jnp.ndarray] 
+    ymean                : float = 0.
+    ystd                 : float = 1.
+    dtype                : Dtype = jnp.float32 
+    no_batch_norm        : bool  = False
+    n_noise              : int   = 100
+    noise_std            : float = 1.0
+    noise_n_resample     : int   = 100
+    key                  : int   = generate_seed_according_to_time(1)[0]
+
+    def setup(self): 
+        self.n_model = self.n_model_all+self.n_model_loo
+        modulelist = {} 
+        for ii in range(self.n_model):
+            modulelist[str(ii)] = RntJSIN(
+                n_hidden        = self.n_hidden,  
+                dtype           = self.dtype, 
+            ) 
+        self.MLP = modulelist
+
+    def compute_output(self, emb: jnp.ndarray) -> jnp.ndarray:
+        """
+        emb: (..., d)
+        """
+        # Concatenate the embeddings
+        output = compute_ind_from_embedding(emb, self.MLP)
+        
+        ## Compute bias-corrected Jackknife estimate
+        term1 = output[:self.n_model_all].mean(0)
+        term2 = output[self.n_model_all:].mean(0)
+        output = self.n_model_loo*term1 - (self.n_model_loo-1)*term2
+        
+        return output
+      
+    def __call__(self, x:jnp.ndarray):
+        """
+        INPUT  
+        x : (..., n_dim)
+
+        RETURN
+        (...,)
+        """
+        ## Get x embeddings 
+        emb = self.latent_embedding_fn(x)            
+         
+        ## Get model output
+        output = self.compute_output(emb)
+
+        ## Denormalize
+        output = zero_mean_unit_var_denormalization(output, self.ymean, self.ystd)
+
+        return output
 
 def compute_loss(
         inputs            : jnp.ndarray,
@@ -455,5 +511,49 @@ def compute_ens_from_embedding(x:jnp.ndarray, MLPs:nn.Module, stochastic:bool=Fa
 
     if b == 1:
         return output.reshape()
+    return output                       
+
+def compute_ind_from_embedding(x:jnp.ndarray, MLPs:nn.Module, stochastic:bool=False, n_resample:int=1) -> jnp.ndarray:
+    """
+    x: embedding (..., d)
+    
+    if stochastic:
+    - First sample new response data, x_rep, by creating identical copies, 
+        of shape (n_resample, n_dim). 
+    - Then pass the response data into model and obtain samples, where
+        samples[n_base*(i-1):n_sample*i,:] contains one sample for each data point, 
+        for i = 1, ..., n_resample
+    """
+    n_model = len(MLPs)
+    x_re = x.reshape(-1, x.shape[-1])
+    b = x_re.shape[0]
+    if stochastic > 0:
+        ## Sample new response data 
+        emb_rep = jnp.tile(
+            x_re, 
+            (n_resample, *([1]*x_re.ndim))
+        ).reshape(                                          # (n_resample, b, d)
+            n_resample*b, *x_re.shape[1:]  
+        )                                                   # (n_resample*b, d)
+        ## Pass into model and average over n_model
+        output = jnp.stack(
+            [MLPs[str(ii)](emb_rep) 
+            for ii in range(n_model)],
+            axis = 0
+        ).reshape(                                         # (n_model, n_resample*b, out_dim=1)
+            n_model, n_resample, b, -1
+        ).mean(1)                                          # (n_model, b, out_dim=1)
+         
+    else: 
+        output = jnp.stack(
+            [MLPs[str(ii)](x_re) 
+            for ii in range(n_model)],
+            axis = 0                                       # (n_model, b, out_dim=1) 
+        )                                                  # (n_model ,b, out_dim=1) 
+        
+    output = output.squeeze(-1)                            # (n_model, b)
+
+    if b == 1:
+        return output.reshape(-1)
     return output                       
 

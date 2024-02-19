@@ -189,14 +189,21 @@ def create_experiment_config_argparser(parser):
         "--use_validation_set",
         action="store_true",
         default=False,
-        help="whether use validation set",
+        help="whether to use validation set",
+    )
+    
+    parser.add_argument(
+        "--early_stopping",
+        action="store_true",
+        default=False,
+        help="whether to use early stopping",
     )
 
     parser.add_argument(
         "--early_stopping_patience",
         type=int,
         default=3, 
-        help="whether perform early_stopping",
+        help="whether to perform early_stopping",
     )
 
     parser.add_argument(
@@ -245,7 +252,7 @@ def create_experiment_config_argparser(parser):
     parser.add_argument(
         "--sto_n_resample",
         type=int,
-        default=50,
+        default=100,
         help="number of resamples to average over for stochastic MLP",
     )
 

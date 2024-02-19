@@ -106,14 +106,14 @@ class LatentEmbedding(object):
         mu: (n_rad, d) 
         gamma: float
         """  
-         
-        gamma = torch.stack([(self.n_rad/(xmax - xmin))**2
-                            for (xmin, xmax) in self.search_domain], dim=0)
-        mu = torch.stack([torch.linspace(start=xmin+(xmax-xmin)/(10*self.n_rad), 
-                                        end=xmax-(xmax-xmin)/(10*self.n_rad), 
-                                        steps=self.n_rad)
-                        for (xmin, xmax) in self.search_domain], dim=-1)
-    
+        
+        gamma = torch.stack([2*(xmax - xmin)/(self.n_rad - 1)
+                             for (xmin, xmax) in self.search_domain], dim=0)
+        mu = torch.stack([torch.linspace(start=xmin, 
+                                         end=xmax, 
+                                         steps=self.n_rad)
+                          for (xmin, xmax) in self.search_domain], dim=-1)
+        
         self.mu    = mu.to(self.dtype)
         self.gamma = gamma.to(self.dtype)
 
@@ -294,7 +294,7 @@ class StoModel(pl.LightningModule):
         return out # (n_model, b, out_dim=1) 
          
     def training_step(self, batch:Tuple[Tensor, ...], batch_idx):
-        indicator_jn, x, y = batch
+        indicator_jn, (x, y) = batch
         b = x.shape[0]
 
         if self.n_noise > 0:

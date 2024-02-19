@@ -5,6 +5,7 @@ import torch
 from torch import Tensor
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import RichProgressBar
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from typing import Callable, Tuple 
 import time 
 
@@ -47,11 +48,19 @@ def train_pl_model(
     if kwargs.get('use_stochastic', False): 
         from codes.influence_max.noisy_funct_optimization.nfo_model_module_pytorch import StoModel as MModule 
         from codes.influence_max.model_module import preprocess, sto_parameter_reconstruct as parameter_reconstruct
-        from codes.influence_max.noisy_funct_optimization.nfo_model_module import StoJMLP as JMLP, StoJENS as JENS
+        from codes.influence_max.noisy_funct_optimization.nfo_model_module import StoJMLP as JMLP 
+        if kwargs.get('leave_one_out', False):
+            from codes.influence_max.noisy_funct_optimization.nfo_model_module import StoJJAC as JENS 
+        else:
+            from codes.influence_max.noisy_funct_optimization.nfo_model_module import StoJENS as JENS 
     else:
         from codes.influence_max.noisy_funct_optimization.nfo_model_module_pytorch import RntModel as MModule 
         from codes.influence_max.model_module import preprocess, rnt_parameter_reconstruct as parameter_reconstruct
-        from codes.influence_max.noisy_funct_optimization.nfo_model_module import RntJMLP as JMLP, RntJENS as JENS 
+        from codes.influence_max.noisy_funct_optimization.nfo_model_module import RntJMLP as JMLP
+        if kwargs.get('leave_one_out', False):
+            from codes.influence_max.noisy_funct_optimization.nfo_model_module import RntJJAC as JENS 
+        else:
+            from codes.influence_max.noisy_funct_optimization.nfo_model_module import RntJENS as JENS 
         
     pl.seed_everything(kwargs['trial'], workers=True)       
     infmax_model = MModule(
@@ -87,8 +96,15 @@ def train_pl_model(
         'deterministic': False,
         'devices': kwargs.get('n_devices',1),
     } 
+   
 
     callbacks = [RichProgressBar()] if kwargs['progress_bar'] else []
+    if kwargs.get('early_stopping', False):
+        callbacks.append(EarlyStopping(
+            monitor="val_loss",  
+            patience=kwargs['early_stopping_patience'],  
+            mode="min")
+        )
 
     t0 = time.time()
     trainer = pl.Trainer(**kwargs_trainer, callbacks=callbacks)
@@ -125,7 +141,8 @@ def train_pl_model(
     ).apply 
     
     ensmodel_fn = JENS(
-        n_model             = kwargs['n_ensemble_model'],
+        n_model_all         = kwargs['n_candidate_model'],
+        n_model_loo         = kwargs['n_ensemble_model'],
         n_hidden            = kwargs['n_hidden'],
         latent_embedding_fn = latent_embedding_fn,  
         ymean               = jnp.array(infmax_dm.ymean),
@@ -143,8 +160,12 @@ def train_pl_model(
     # del variables 
 
     variables     = parameter_reconstruct(infmax_model.nets[:kwargs['n_candidate_model']])
-    variables_ens = parameter_reconstruct(infmax_model.nets[kwargs['n_candidate_model']:])
-    ensmodel_fn   = Partial(jit(ensmodel_fn), variables_ens)
+    if kwargs['leave_one_out']:
+        variables_ens = parameter_reconstruct(infmax_model.nets)
+    else:
+        variables_ens = parameter_reconstruct(infmax_model.nets[kwargs['n_candidate_model']:])
+
+    ensmodel_fn = Partial(jit(ensmodel_fn), variables_ens)
     del variables_ens
     del infmax_model
     gc_cuda()
@@ -184,16 +205,20 @@ def train_pl_model(
         """
         Obtaining xmin for the ensemble model (excluding jackknife ones)
         """
-        xmin_star, _ = global_optimization(
-            ensmodel_fn,
-            method          = kwargs.get('search_xmin_method', 'grid-search'),
-            search_domain   = jnp.array(search_domain), 
-            nstart          = kwargs.get('search_xmin_nstart', 100), 
-            optimize_method = kwargs.get('search_xmin_opt_method', 'trust-constr'),  
-            use_double      = kwargs.get('use_double', False),
-            tol             = kwargs.get('search_xmin_opt_tol', 1e-4), 
-            disp            = kwargs.get('disp', False))
-         
+        # xmin_star, _ = global_optimization(
+        #     ensmodel_fn,
+        #     method          = kwargs.get('search_xmin_method', 'grid-search'),
+        #     search_domain   = jnp.array(search_domain), 
+        #     nstart          = kwargs.get('search_xmin_nstart', 100), 
+        #     optimize_method = kwargs.get('search_xmin_opt_method', 'trust-constr'),  
+        #     use_double      = kwargs.get('use_double', False),
+        #     tol             = kwargs.get('search_xmin_opt_tol', 1e-4), 
+        #     disp            = kwargs.get('disp', False))
+        """
+        Choose one with minimum loss
+        """
+        xmin_star = xmins[jnp.argmin(train_metrics[:kwargs['n_candidate_model']])]
+        
         t1 = time.time()-t0
         print("Obtained xmin_star=({:s}). It takes {:.3f}s.".format(print_x(xmin_star), t1))    
     
